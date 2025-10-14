@@ -1,105 +1,175 @@
 const Group = require('../models/Group');
-const GroupMessage = require('../models/GroupMessage');
+const Message = require('../models/Message');
 const User = require('../models/User');
-const onlineUsers = require("../sockets/onlineUsers");
-
-
+const onlineUsers = require('../sockets/onlineUsers');
+const Conversation = require('../models/Conversation');
+const { cloudinary, uploadToCloudinary } = require('../config/cloudinaryConfig');
 
 const createGroup = async (req, res) => {
   const { name, friendIds } = req.body;
   const { _id: userId } = req.user;
 
-  if (!name || !friendIds || friendIds.length === 0) {
-    const message = 'El nombre del grupo y los amigos son requeridos.';
-    //console.warn('[Grupo] Validación fallida:', message);
-    return res.status(400).json({ message });
+  let parsedFriendIds = [];
+  try {
+    parsedFriendIds = JSON.parse(friendIds);
+  } catch {
+    parsedFriendIds = Array.isArray(friendIds) ? friendIds : [];
+  }
+
+  if (!name || parsedFriendIds.length === 0) {
+    return res.status(400).json({ message: 'El nombre del grupo y los amigos son requeridos.' });
   }
 
   try {
-    const users = await User.find({ _id: { $in: friendIds } });
-    if (users.length !== friendIds.length) {
+    const users = await User.find({ _id: { $in: parsedFriendIds } });
+    if (users.length !== parsedFriendIds.length) {
       return res.status(400).json({ message: 'Algunos amigos no existen.' });
     }
-    const group = new Group({
+
+    // Subir imagen del grupo si se envía
+    let groupImage = null;
+    if (req.file && req.file.buffer) {
+      const uploadRes = await uploadToCloudinary(req.file.buffer);
+      groupImage = uploadRes.secure_url;
+    }
+
+    const conversation = new Conversation({
+      participants: [...parsedFriendIds, userId],
+      isGroup: true,
       name,
-      members: [...friendIds, userId],
       createdBy: userId,
+      groupImage,
     });
-    await group.save();
+
+    await conversation.save();
+
     const io = req.app.get('io');
-    [...friendIds, userId].forEach((memberId) => {
+    [...parsedFriendIds, userId].forEach((memberId) => {
       const socketId = onlineUsers.get(memberId.toString());
       if (socketId) {
         io.to(socketId).emit('newConversation', {
-          _id: group._id,
+          _id: conversation._id,
           name,
-          participants: group.members,
+          groupImage,
+          participants: conversation.participants,
           isGroup: true,
         });
         io.to(socketId).emit('newNotification', {
           message: `Fuiste añadido al grupo ${name}`,
           type: 'group',
-          conversationId: group._id,
+          conversationId: conversation._id,
         });
       }
     });
-    //console.log('[Grupo] Grupo creado con éxito:', group._id);
-    return res.status(201).json({ message: 'Grupo creado con éxito.', group });
+
+    res.status(201).json({ message: 'Grupo creado con éxito.', group: conversation });
   } catch (error) {
     //console.error('[Grupo] Error creando el grupo:', error);
-    return res.status(500).json({ message: 'Error creando el grupo. Inténtalo más tarde.' });
+    res.status(500).json({ message: 'Error creando el grupo. Inténtalo más tarde.' });
+  }
+};
+
+const updateGroupImage = async (req, res) => {
+  const { groupId } = req.params;
+  const userId = req.user._id;
+
+  try {
+    const group = await Conversation.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
+
+    if (!group.participants.includes(userId)) {
+      return res.status(403).json({ message: 'No tienes permiso para modificar este grupo' });
+    }
+
+    if (!req.file || !req.file.buffer)
+      return res.status(400).json({ message: 'No se recibió ninguna imagen válida' });
+
+    const uploadRes = await uploadToCloudinary(req.file.buffer);
+    group.groupImage = uploadRes.secure_url;
+    await group.save();
+
+    const io = req.app.get('io');
+    io.to(`group:${groupId}`).emit('groupImageUpdated', {
+      groupId,
+      image: group.groupImage,
+    });
+
+    res.json({ message: 'Imagen actualizada con éxito', group });
+  } catch (error) {
+    //console.error('[Grupo] Error al actualizar imagen del grupo:', error);
+    res.status(500).json({ message: 'Error al actualizar la imagen del grupo' });
   }
 };
 
 const getUserGroups = async (req, res) => {
-  const userId = req.user._id; 
-  //console.log('[Grupo] Buscando grupos para el usuario:', userId);
+  const userId = req.user._id;
 
   try {
-    const groups = await Group.find({ members: userId }).populate('members', 'username profilePicture');
-    if (groups.length === 0) {
-      //console.warn('[Grupo] No se encontraron grupos para el usuario:', userId);
+    const groups = await Conversation.find({ participants: userId, isGroup: true })
+      .populate('participants', 'username profilePicture')
+      .populate('createdBy', 'username profilePicture');
+
+    if (groups.length === 0)
       return res.status(404).json({ message: 'No se encontraron grupos.' });
-    }
-    const validGroups = await Promise.all(
-      groups.map(async (group) => {
-        try {
-          const exists = await Group.findById(group._id);
-          return exists ? group : null;
-        } catch (e) {
-          //console.error(`Invalid group ID ${group._id}:`, e);
-          return null;
-        }
-      })
-    );
-    const filteredGroups = groups.filter((group) => group);
-    if (filteredGroups.length === 0) {
-      //console.warn('[Grupo] No se encontraron grupos válidos para el usuario:', filteredGroups.length);
-      return res.status(404).json({ message: 'No se encontraron grupos válidos.' });
-    }
-    //console.log('[Grupo] Grupos encontrados:', filteredGroups.length);
-    res.status(200).json({ groups: filteredGroups });
+
+    res.status(200).json({ groups });
   } catch (error) {
     //console.error('[Grupo] Error al obtener los grupos:', error);
     res.status(500).json({ error: 'Error al obtener los grupos. Intenta de nuevo.' });
   }
 };
 
-
 const getGroupDetails = async (req, res) => {
   const { groupId } = req.params;
+  const userId = req.user._id;
 
   try {
-    const group = await Group.findById(groupId).populate('members', 'username profilePicture');
+    const group = await Conversation.findById(groupId)
+      .populate("participants", "username profilePicture")
+      .populate("createdBy", "username profilePicture")
+      .lean();
+
     if (!group) {
-      //console.warn('[Grupo] Grupo no encontrado con ID:', groupId);
-      return res.status(404).json({ message: 'Grupo no encontrado' });
+      return res.status(404).json({ message: "Grupo no encontrado" });
     }
-    //console.log('[Grupo] Grupo obtenido:', group._id);
+
+    if (!group.participants.some((p) => p._id.toString() === userId.toString())) {
+      return res.status(403).json({ message: "No eres miembro de este grupo" });
+    }
+
+    group.participants = (group.participants || []).map((p) => ({
+      _id: p._id.toString(),
+      username: p.username || "Unknown",
+      profilePicture:
+        p.profilePicture && p.profilePicture !== "/Uploads/undefined"
+          ? p.profilePicture
+          : "https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png",
+    }));
+
+    if (group.createdBy) {
+      group.createdBy = {
+        _id: group.createdBy._id.toString(),
+        username: group.createdBy.username || "Unknown",
+        profilePicture:
+          group.createdBy.profilePicture && group.createdBy.profilePicture !== "/Uploads/undefined"
+            ? group.createdBy.profilePicture
+            : "https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png",
+      };
+    }
+
+    console.log("Group details sent:", {
+      groupId,
+      participants: group.participants.map((p) => ({
+        _id: p._id,
+        username: p.username,
+        profilePicture: p.profilePicture,
+      })),
+    });
+
     res.json({ group });
   } catch (error) {
-    //console.error('[Grupo] Error al obtener detalles del grupo:', error);
-    res.status(500).json({ message: 'Error al obtener los detalles del grupo' });
+    //console.error("[Grupo] Error al obtener detalles del grupo:", error);
+    res.status(500).json({ message: "Error al obtener los detalles del grupo" });
   }
 };
 
@@ -109,52 +179,61 @@ const updateParticipants = async (req, res) => {
   const userId = req.user._id;
 
   try {
-    const group = await Group.findById(groupId);
-    if (!group) {
-      return res.status(404).json({ message: "Grupo no encontrado" });
-    }
+    const group = await Conversation.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
 
-    if (!group.members.includes(userId)) {
-      return res.status(403).json({ message: "No tienes permiso" });
-    }
+    if (!group.participants.includes(userId)) return res.status(403).json({ message: 'No tienes permiso' });
 
-    group.members = participantIds;
+    group.participants = participantIds;
     await group.save();
 
-    const io = req.app.get("io");
-
+    const io = req.app.get('io');
     participantIds.forEach((memberId) => {
       const socketId = onlineUsers.get(memberId.toString());
       if (socketId) {
-        io.to(socketId).emit("newNotification", {
+        io.to(socketId).emit('newNotification', {
           message: `Los participantes del grupo ${group.name} fueron actualizados`,
-          type: "group",
+          type: 'group',
           conversationId: groupId,
         });
       }
     });
 
-    res.json({ message: "Participantes actualizados con éxito", group });
-    //console.log("[Grupo] Participantes actualizados con éxito:", groupId);
+    io.to(`group:${groupId}`).emit('groupUpdated', group);
+    res.json({ message: 'Participantes actualizados con éxito', group });
   } catch (error) {
-    //console.error("[Grupo] Error al actualizar participantes:", error);
-    //console.error(error);
-    res.status(500).json({ message: "Error al actualizar participantes" });
+    //console.error('[Grupo] Error al actualizar participantes:', error);
+    res.status(500).json({ message: 'Error al actualizar participantes' });
   }
 };
 
 const deleteGroupId = async (req, res) => {
   const { groupId } = req.params;
+  const userId = req.user._id;
 
   try {
-    const group = await Group.findByIdAndDelete(groupId);
+    const group = await Conversation.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
 
-    if (!group) {
-      //console.warn('[Grupo] Grupo a eliminar no encontrado:', groupId);
-      return res.status(404).json({ message: 'Grupo no encontrado' });
+    if (group.createdBy.toString() !== userId)
+      return res.status(403).json({ message: 'Solo el creador puede eliminar el grupo' });
+
+    const messages = await Message.find({ conversationId: groupId });
+    for (const message of messages) {
+      if (message.fileUrl && message.fileType) {
+        const publicId = message.fileUrl.split('/').pop().split('.')[0];
+        await cloudinary.uploader.destroy(`chat_files/${publicId}`, {
+          resource_type: message.fileType === 'document' ? 'raw' : message.fileType,
+        });
+      }
     }
 
-    //console.log('[Grupo] Grupo eliminado con éxito:', group._id);
+    await Message.deleteMany({ conversationId: groupId });
+    await Conversation.findByIdAndDelete(groupId);
+
+    const io = req.app.get('io');
+    io.to(`group:${groupId}`).emit('groupDeleted', { groupId });
+
     res.status(200).json({ message: 'Grupo eliminado correctamente' });
   } catch (error) {
     //console.error('[Grupo] Error al eliminar el grupo:', error);
@@ -162,50 +241,32 @@ const deleteGroupId = async (req, res) => {
   }
 };
 
-exports.getUserGroups = async (req, res) => {
-  try {
-    const userId = req.user.id;
-
-    const groups = await Group.find({ createdBy: userId });
-
-    if (!groups.length) {
-      return res.status(404).json({ message: 'No se encontraron grupos.' });
-    }
-
-    res.json({ groups });
-    //console.log(`Grupos obtenidos para el usuario ${userId}:`, groups.length);
-  } catch (err) {
-    //console.error(err);
-    res.status(500).json({ message: 'Error del servidor al obtener los grupos.' });
-  }
-};
-
 const leaveGroup = async (req, res) => {
   const { groupId } = req.params;
-  const userId = req.user.id;
+  const userId = req.user._id;
+
   try {
-    const group = await Group.findById(groupId);
-    if (!group) {
-      //console.warn('[Grupo] Grupo no encontrado:', groupId);
-      return res.status(404).json({ message: 'Grupo no encontrado' });
-    }
-    if (!group.members.includes(userId)) {
+    const group = await Conversation.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
+
+    if (!group.participants.includes(userId))
       return res.status(403).json({ message: 'No eres miembro del grupo' });
-    }
-    group.members = group.members.filter((member) => member.toString() !== userId);
+
+    group.participants = group.participants.filter((member) => member.toString() !== userId);
     await group.save();
+
     const io = req.app.get('io');
     io.to(`group:${groupId}`).emit('groupMemberLeft', {
       groupId,
       userId,
       message: `El usuario ha salido del grupo ${group.name}`,
     });
-    onlineUsers.forEach((socketId, memberId) => {
-      if (group.members.includes(memberId)) {
-        io.to(socketId).emit('groupUpdated', group);
-      }
+
+    group.participants.forEach((memberId) => {
+      const socketId = onlineUsers.get(memberId.toString());
+      if (socketId) io.to(socketId).emit('groupUpdated', group);
     });
-    //console.log('[Grupo] Usuario salió del grupo:', groupId, userId);
+
     res.json({ message: 'Has salido del grupo con éxito' });
   } catch (error) {
     //console.error('[Grupo] Error al salir del grupo:', error);
@@ -216,27 +277,19 @@ const leaveGroup = async (req, res) => {
 const getUserGroupsWithLastMessage = async (req, res) => {
   try {
     const userId = req.user._id;
-
-    const groups = await Group.find({
-      $or: [{ createdBy: userId }, { members: userId }]
-    })
-      .populate('createdBy', 'username profilePicture')
-      .populate('members', 'username profilePicture');
+    const groups = await Conversation.find({ participants: userId, isGroup: true })
+      .populate('participants', 'username profilePicture')
+      .populate('createdBy', 'username profilePicture');
 
     const groupsWithLastMessage = await Promise.all(
       groups.map(async (group) => {
-        const lastMessage = await GroupMessage.findOne({ groupId: group._id })
-          .populate('sender', 'username profilePicture')
+        const lastMessage = await Message.findOne({ conversationId: group._id })
+          .populate('senderId', 'username profilePicture')
           .sort({ createdAt: -1 });
-
-        return {
-          ...group.toObject(),
-          lastMessage: lastMessage || null,
-        };
+        return { ...group.toObject(), lastMessage: lastMessage || null };
       })
     );
 
-    //console.log(`Grupos obtenidos para el usuario ${userId}:`, groupsWithLastMessage.length);
     res.json({ groups: groupsWithLastMessage });
   } catch (err) {
     //console.error('Error fetching user groups with last message:', err);
@@ -244,16 +297,13 @@ const getUserGroupsWithLastMessage = async (req, res) => {
   }
 };
 
-
-
-
-
 module.exports = {
   createGroup,
+  updateGroupImage,
   getUserGroups,
   getGroupDetails,
   updateParticipants,
-  leaveGroup,
   deleteGroupId,
+  leaveGroup,
   getUserGroupsWithLastMessage,
 };

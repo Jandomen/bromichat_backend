@@ -23,7 +23,7 @@ const app = express();
 const server = http.createServer(app);
 
 const allowedOrigins = [
-  "https://bromichat.vercel.app"
+  "http://localhost:3000",
 ];
 
 app.use(cors({
@@ -54,7 +54,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.set('io', io);
 
-app.use('/uploads', express.static('uploads'));
+
 app.use('/assets', express.static(path.join(__dirname, '../frontend/src/assets')));
 
 app.use('/auth', authRoutes);

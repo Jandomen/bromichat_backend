@@ -6,13 +6,11 @@ const messageSchema = new mongoose.Schema({
     enum: ['private', 'group'], 
     required: true 
   }, 
-
   senderId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
     required: true 
   }, 
-
   recipientId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
@@ -23,7 +21,6 @@ const messageSchema = new mongoose.Schema({
       message: 'El ID del destinatario es obligatorio para chats privados.'
     }
   }, 
-
   groupId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Group', 
@@ -34,29 +31,31 @@ const messageSchema = new mongoose.Schema({
       message: 'El ID del grupo es obligatorio para los mensajes grupales.'
     }
   },
-
   content: { 
     type: String,
     required: function() { return !this.fileUrl; } 
   },
-
   fileUrl: {
     type: String,
     required: function() { return !this.content; } 
   },
-
+  fileType: { 
+    type: String, 
+    enum: ['image', 'video', 'document', null] 
+  },
   createdAt: { 
     type: Date, 
     default: Date.now 
   },
-  
   conversationId: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: 'Conversation',
-  required: true
- },
-
-
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Conversation',
+    required: true
+  },
+  isEdited: { 
+    type: Boolean, 
+    default: false 
+  },
 });
 
 messageSchema.pre('validate', function(next) {
@@ -68,5 +67,10 @@ messageSchema.pre('validate', function(next) {
     next();
   }
 });
+
+messageSchema.index(
+  { conversationId: 1, senderId: 1, createdAt: 1 }, 
+  { unique: true }
+);
 
 module.exports = mongoose.model('Message', messageSchema);

@@ -10,7 +10,10 @@ const UserSchema = new mongoose.Schema(
     password: { type: String, required: true },
     phone: { type: String, unique: true, required: true },
     birthdate: { type: Date, required: true },
-    profilePicture: { type: String },
+    profilePicture: {
+        type: String,
+        default: "https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png"
+    },
     bio: { type: String },
     friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], 

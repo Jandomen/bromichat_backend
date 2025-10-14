@@ -1,16 +1,28 @@
 const express = require('express');
 const router = express.Router();
-const { createGroup, getUserGroups, getGroupDetails, updateParticipants, deleteGroupId, leaveGroup, getUserGroupsWithLastMessage } = require('../controllers/groupController');
+const multer = require('multer');
+const { storage } = require('../middlewares/multer'); 
+const upload = multer({ storage });
 const { authenticate } = require('../middlewares/auth');
+const {
+  createGroup,
+  updateGroupImage,
+  getUserGroups,
+  getGroupDetails,
+  updateParticipants,
+  deleteGroupId,
+  leaveGroup,
+  getUserGroupsWithLastMessage,
+} = require('../controllers/groupController');
 
-router.post('/create', authenticate, createGroup);
+router.post('/create', authenticate, upload.single('groupImage'), createGroup);
+router.put('/:groupId/update-image', authenticate, upload.single('groupImage'), updateGroupImage);
+
 router.get('/groups', authenticate, getUserGroups);
-router.get('/:groupId', authenticate, getGroupDetails);
-router.put('/group/:groupId/participants', authenticate, updateParticipants);
-router.delete('/group/:groupId', authenticate, deleteGroupId);
-router.delete('/group/:groupId/leave', authenticate, leaveGroup);
 router.get('/groups/with-last-message', authenticate, getUserGroupsWithLastMessage);
-router.get('/my-groups', authenticate, getUserGroups);
-
+router.get('/:groupId', authenticate, getGroupDetails);
+router.put('/:groupId/participants', authenticate, updateParticipants);
+router.delete('/:groupId', authenticate, deleteGroupId);
+router.delete('/:groupId/leave', authenticate, leaveGroup);
 
 module.exports = router;

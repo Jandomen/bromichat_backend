@@ -1,34 +1,45 @@
 const multer = require('multer');
 
-const allowedTypes = [
-  'image/jpeg',
-  'image/png',
-  'image/gif',
-  'image/webp',
-  'image/bmp',
-  'image/tiff',
-  'image/svg+xml',
-  'video/mp4',
-  'video/webm',
-  'video/ogg',
-  'video/mpeg',
-  'video/x-msvideo',
-  'video/quicktime',
-];
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
-  if (allowedTypes.includes(file.mimetype)) {
-    cb(null, true);
-  } else {
-    //console.log(`File rejected: ${file.originalname} (MIME: ${file.mimetype})`);
-    cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}`), false);
+  const allowedTypes = [
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'video/mp4',
+    'video/webm',
+    'video/ogg',
+    'application/pdf',
+  ];
+
+  console.log('Archivo recibido en Multer:', {
+    originalname: file.originalname,
+    mimetype: file.mimetype,
+    size: file.size,
+  });
+
+  if (!allowedTypes.includes(file.mimetype)) {
+    return cb(
+      new Error(
+        `Tipo de archivo no permitido: ${file.mimetype} (${file.originalname}). Solo se permiten imágenes (jpeg, jpg, png, gif, webp), videos (mp4, webm, ogg) o PDFs.`
+      ),
+      false
+    );
   }
+
+  cb(null, true);
 };
 
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage,
+  limits: {
+    fileSize: 100 * 1024 * 1024, 
+    files: 10, 
+  },
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 });
 
 module.exports = upload;

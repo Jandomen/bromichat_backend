@@ -21,6 +21,8 @@ const register = async (req, res, next) => {
     if(await User.findOne({ username })) return res.status(400).json({ error: 'El nombre de usuario ya existe, intente con otro :0' });
     if(await User.findOne({ phone })) return res.status(400).json({ error: 'El numero telefonico ya existe, intente con otro :0' });
 
+    const birthdateObj = new Date(birthdate + 'T00:00:00');
+
     const user = new User({
       username,
       name,
@@ -28,20 +30,29 @@ const register = async (req, res, next) => {
       email,
       password: hashedPassword,
       phone,
-      birthdate
+      birthdate: birthdateObj
     });
 
     await user.save();
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1d' });
 
-    //console.log('Registro exitoso :)');
+    const userData = {
+      _id: user._id,
+      username: user.username,
+      name: user.name,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phone,
+      birthdate: user.birthdate.toISOString().split('T')[0],
+    };
 
-    res.status(201).json({ token, user });
+    res.status(201).json({ token, user: userData });
   } catch (error) {
     next(error);
   }
 };
+
 
 
 
@@ -105,13 +116,16 @@ const getMe = async (req, res) => {
       .populate('following', '_id username name lastName profilePicture')
       .populate('blockedUsers', '_id username name lastName profilePicture')
       .select('-password');
-    if (!user) {
-      return res.status(404).json({ message: 'Usuario no encontrado' });
-    }
-    //console.log('Depuración - Datos devueltos por /auth/me:', user);
-    res.status(200).json(user);
+
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    const userData = {
+      ...user._doc,
+      birthdate: user.birthdate.toISOString().split('T')[0]
+    };
+
+    res.status(200).json(userData);
   } catch (error) {
-    //console.error('Error al obtener usuario actual:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
