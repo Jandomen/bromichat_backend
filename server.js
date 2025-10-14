@@ -23,6 +23,7 @@ const app = express();
 const server = http.createServer(app);
 
 const allowedOrigins = [
+  
    "https://bromichat.vercel.app",
 ];
 

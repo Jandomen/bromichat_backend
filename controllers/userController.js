@@ -2,7 +2,7 @@ const User = require('../models/User');
 const mongoose = require('mongoose');
 const Post = require('../models/Post'); 
 const Comment = require('../models/Comment');
-const cloudinary = require('cloudinary').v2;
+const { uploadToCloudinary } = require('../config/cloudinaryConfig');
 
 
 const getUserProfile = async (req, res) => {
@@ -298,16 +298,16 @@ const updateProfilePicture = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    if (!req.file) {
+    if (!req.file || !req.file.buffer) {
       return res.status(400).json({ message: 'Archivo de imagen requerido' });
     }
 
-    const fileUrl = req.file.path; // CloudinaryStorage proporciona la URL
-   // console.log('Foto de perfil subida a Cloudinary:', fileUrl);
+    // Subir directamente a Cloudinary desde buffer
+    const result = await uploadToCloudinary(req.file.buffer, 'profile_pictures');
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { profilePicture: fileUrl },
+      { profilePicture: result.secure_url },
       { new: true }
     ).select('username profilePicture');
 
@@ -319,15 +319,11 @@ const updateProfilePicture = async (req, res) => {
       message: 'Foto de perfil actualizada con éxito',
       user: updatedUser,
     });
-   // console.log('Foto de perfil actualizada con éxito:', updatedUser.profilePicture);
   } catch (error) {
-   // console.error('Error al actualizar la foto de perfil:', error);
+    console.error('Error al actualizar la foto de perfil:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
-
-
-
 
 const deleteProfilePicture = async (req, res) => {
   try {
@@ -335,22 +331,29 @@ const deleteProfilePicture = async (req, res) => {
 
     const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { profilePicture: 'https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png' },
+      { profilePicture: '' }, // Eliminamos el campo
       { new: true }
     ).select('username profilePicture');
 
     if (!updatedUser) {
-     // console.error('Usuario no encontrado');
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-   // console.log('Foto de perfil restaurada a valor por defecto:', updatedUser.profilePicture);
-    res.status(200).json({ message: 'Foto de perfil eliminada', user: updatedUser });
+    res.status(200).json({
+      message: 'Foto de perfil eliminada',
+      user: updatedUser,
+    });
   } catch (error) {
-   // console.error('Error al eliminar la foto de perfil:', error);
+    console.error('Error al eliminar la foto de perfil:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
+
+
+
+
+
+
 
 
 
