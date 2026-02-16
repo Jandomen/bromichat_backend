@@ -62,13 +62,15 @@ const UserSchema = new mongoose.Schema(
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     savedPosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
-    isVerified: { type: Boolean, default: true },
+    isVerified: { type: Boolean, default: false },
     verificationToken: { type: String },
+    firebaseUid: { type: String },
+    fcmToken: { type: String },
     resetPasswordToken: { type: String },
     resetPasswordExpires: { type: Date },
     credentials: [{
       credentialID: { type: String, required: true },
-      publicKey: { type: String, required: true }, // Store as base64 string
+      publicKey: { type: String, required: true },
       counter: { type: Number, default: 0 },
       transports: [String],
     }],

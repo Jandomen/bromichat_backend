@@ -20,6 +20,7 @@ const {
   updateSosSettings,
   toggleSavePost,
   getSavedPosts,
+  updateFcmToken,
 } = require('../controllers/userController');
 const upload = require('../middlewares/multer');
 
@@ -44,6 +45,7 @@ router.put('/sos-settings', authenticate, updateSosSettings);
 
 router.post('/save/:postId', authenticate, toggleSavePost);
 router.get('/saved', authenticate, getSavedPosts);
+router.put('/fcm-token', authenticate, updateFcmToken);
 
 
 

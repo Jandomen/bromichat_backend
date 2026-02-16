@@ -1,4 +1,6 @@
 const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { sendPushNotification } = require('../utils/pushNotifications');
 
 const createNotification = async ({ recipientId, senderId, message, type, link, postId, commentId, videoId, galleryId, conversationId, io }) => {
   const rId = recipientId?._id || recipientId;
@@ -46,10 +48,28 @@ const createNotification = async ({ recipientId, senderId, message, type, link, 
     });
     await notification.save();
 
+    const populatedNotification = await notification.populate('sender', 'username name lastName profilePicture');
+
     if (io) {
-      const populatedNotification = await notification.populate('sender', 'username name lastName profilePicture');
-      // console.log(`🚀 Emitiendo nueva notificación a sala: ${rId.toString()}`);
       io.to(rId.toString()).emit('newNotification', populatedNotification);
+    }
+
+    // --- ENVIAR PUSH NOTIFICATION ---
+    try {
+      const user = await User.findById(rId).select('fcmToken');
+      if (user && user.fcmToken) {
+        await sendPushNotification(user.fcmToken, {
+          title: populatedNotification?.sender?.username || 'BromiChat',
+          body: message,
+          data: {
+            type,
+            link: link || '',
+            senderId: sId.toString()
+          }
+        });
+      }
+    } catch (pushErr) {
+      console.error('Error al enviar push:', pushErr);
     }
 
     return notification;
@@ -107,8 +127,25 @@ const createMessageNotification = async ({ conversation, recipientIds, sender, i
       if (io) {
         const populatedNotification = await notification.populate('sender', 'username name lastName profilePicture');
         const room = recipientId?._id ? recipientId._id.toString() : recipientId.toString();
-        // console.log(`🚀 Emitiendo 'newNotification' a sala ${room} para mensaje de ${sender.username}`);
         io.to(room).emit('newNotification', populatedNotification);
+
+        // --- ENVIAR PUSH NOTIFICATION ---
+        try {
+          const user = await User.findById(recipientId).select('fcmToken');
+          if (user && user.fcmToken) {
+            await sendPushNotification(user.fcmToken, {
+              title: sender.username || 'BromiChat',
+              body: `${sender.username} te envió un mensaje${conversation.isGroup ? ` en el grupo ${conversation.name}` : ''}`,
+              data: {
+                type: conversation.isGroup ? 'group_message' : 'message',
+                conversationId: conversation._id.toString(),
+                senderId: sender._id.toString()
+              }
+            });
+          }
+        } catch (pushErr) {
+          console.error('Error enviando push en mensaje:', pushErr);
+        }
       }
 
       notifications.push(notification);
@@ -116,7 +153,6 @@ const createMessageNotification = async ({ conversation, recipientIds, sender, i
 
     return notifications;
   } catch (error) {
-    // console.error('❌ Error creando notificaciones de mensaje:', error);
     throw error;
   }
 };

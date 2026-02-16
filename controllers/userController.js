@@ -656,6 +656,17 @@ const getSavedPosts = async (req, res) => {
   }
 };
 
+const updateFcmToken = async (req, res) => {
+  const { fcmToken } = req.body;
+  const userId = req.user._id;
+  try {
+    await User.findByIdAndUpdate(userId, { fcmToken });
+    res.status(200).json({ message: 'Token FCM actualizado' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error al actualizar token' });
+  }
+};
+
 module.exports = {
   getUserProfile,
   getUsers,
@@ -675,4 +686,5 @@ module.exports = {
   updateSosSettings,
   toggleSavePost,
   getSavedPosts,
+  updateFcmToken,
 };

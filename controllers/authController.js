@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const User = require('../models/User');
 const { sendVerificationEmail, sendResetPasswordEmail } = require('../utils/mailService');
+const admin = require('../config/firebase');
 
 
 const register = async (req, res, next) => {
@@ -36,19 +37,41 @@ const register = async (req, res, next) => {
       phone,
       birthdate: birthdateObj,
       verificationToken,
-      isVerified: true
+      isVerified: false // Ahora empezamos como no verificado
     });
+
+    // Intentar crear usuario en Firebase
+    if (admin.apps.length > 0) {
+      try {
+        const firebaseUser = await admin.auth().createUser({
+          email: email,
+          password: password,
+          displayName: `${name} ${lastName}`,
+        });
+        user.firebaseUid = firebaseUser.uid;
+
+        // Enviar email de verificación de Firebase
+        // Nota: Admin SDK no envía el correo directamente, genera el link o usamos SendGrid/etc.
+        // Pero para simplificar, usaremos el link de verificación de Firebase
+        const actionCodeSettings = {
+          url: 'http://localhost:3000/login', // URL a la que vuelve el usuario
+        };
+        // Para enviar el correo oficial de Firebase, usualmente se hace desde el CLIENTE
+        // pero desde ADMIN podemos enviarlo si configuramos un transportador de correos.
+        // Aquí activaremos la lógica de verificación posterior.
+      } catch (fbError) {
+        console.error('Error al crear usuario en Firebase:', fbError);
+      }
+    }
 
     await user.save();
 
-    /*
+    // Enviar email de verificación
     try {
       await sendVerificationEmail(email, verificationToken);
     } catch (mailError) {
       console.error('Error sending verification email:', mailError);
-      // We don't fail registration if email fails, but maybe log it
     }
-    */
 
     const userData = {
       _id: user._id,
@@ -89,16 +112,31 @@ const login = async (req, res, next) => {
 
     const user = await User.findOne({ email });
     if (!user) {
-      //console.log('El correo electrónico no se encuentra :0');
       return res.status(404).json({ message: 'El correo electrónico no se encuentra :0' });
     }
 
-    /*
-    if (!user.isVerified) {
-      console.log(`Intento de login fallido: Correo no verificado para ${email}`);
+    // Verificar si el correo está verificado en Firebase (si Firebase está habilitado)
+    if (admin.apps.length > 0 && user.firebaseUid) {
+      try {
+        const fbUser = await admin.auth().getUser(user.firebaseUid);
+        if (!fbUser.emailVerified) {
+          return res.status(401).json({
+            message: 'Por favor verifica tu correo electrónico para iniciar sesión.',
+            notVerified: true
+          });
+        }
+        // Sincronizar estado en nuestra DB
+        if (!user.isVerified) {
+          user.isVerified = true;
+          await user.save();
+        }
+      } catch (fbError) {
+        console.error('Error verificando estado en Firebase:', fbError);
+      }
+    } else if (!user.isVerified) {
+      // Fallback si no hay Firebase
       return res.status(401).json({ message: 'Por favor verifica tu correo electrónico para iniciar sesión.' });
     }
-    */
 
     const passwordMatch = await user.comparePassword(password);
     if (!passwordMatch) {
@@ -160,6 +198,18 @@ const verifyEmail = async (req, res) => {
 
     user.isVerified = true;
     user.verificationToken = undefined;
+
+    // Sincronizar con Firebase si existe el UID
+    if (admin.apps.length > 0 && user.firebaseUid) {
+      try {
+        await admin.auth().updateUser(user.firebaseUid, {
+          emailVerified: true
+        });
+      } catch (fbError) {
+        console.error('Error sincronizando verificación con Firebase:', fbError);
+      }
+    }
+
     await user.save();
 
     res.status(200).json({ message: 'Correo electrónico verificado con éxito. Ahora puedes iniciar sesión.' });
@@ -182,7 +232,20 @@ const forgotPassword = async (req, res) => {
     user.resetPasswordExpires = Date.now() + 3600000; // 1 hora
     await user.save();
 
-    await sendResetPasswordEmail(email, resetToken);
+    if (admin.apps.length > 0 && user.firebaseUid) {
+      try {
+        const resetLink = await admin.auth().generatePasswordResetLink(email, {
+          url: 'http://localhost:3000/login',
+        });
+        // Aquí podrías enviar este resetLink usando tu mailService
+        await sendResetPasswordEmail(email, resetLink);
+      } catch (fbError) {
+        console.error('Error generando link en Firebase:', fbError);
+        await sendResetPasswordEmail(email, resetToken);
+      }
+    } else {
+      await sendResetPasswordEmail(email, resetToken);
+    }
 
     res.status(200).json({ message: 'Se ha enviado un correo para restablecer tu contraseña.' });
   } catch (error) {

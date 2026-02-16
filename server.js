@@ -22,6 +22,7 @@ const communityRoutes = require('./routes/communityRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const webauthnRoutes = require('./routes/webauthnRoutes');
 const session = require('express-session');
+require('./config/firebase'); // Inicializar Firebase Admin
 
 const app = express();
 const server = http.createServer(app);
