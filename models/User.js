@@ -10,16 +10,68 @@ const UserSchema = new mongoose.Schema(
     password: { type: String, required: true },
     phone: { type: String, unique: true, required: true },
     birthdate: { type: Date, required: true },
-    profilePicture: {
+    privacySettings: {
+      profileVisibility: {
         type: String,
-        default: "https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png"
+        enum: ['public', 'friends', 'private'],
+        default: 'public'
+      },
+      messagePrivacy: {
+        type: String,
+        enum: ['everyone', 'friends'],
+        default: 'everyone'
+      }
+    },
+    storySettings: {
+      defaultDuration: {
+        type: Number,
+        default: 24
+      },
+      saveToArchive: {
+        type: Boolean,
+        default: true
+      }
+    },
+    sosSettings: {
+      emergencyContacts: [{
+        name: String,
+        phone: String,
+        relationship: String
+      }],
+      message: {
+        type: String,
+        default: "¡Ayuda! Necesito asistencia inmediata. Esta es mi ubicación."
+      },
+      isEnabled: {
+        type: Boolean,
+        default: false
+      }
+    },
+    profilePicture: {
+      type: String,
+      default: "https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png"
+    },
+    coverPhoto: {
+      type: String,
+      default: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80"
     },
     bio: { type: String },
     friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-    followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], 
-    following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }], 
+    followers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    following: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     blockedUsers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    savedPosts: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Post' }],
     role: { type: String, enum: ['user', 'admin'], default: 'user' },
+    isVerified: { type: Boolean, default: true },
+    verificationToken: { type: String },
+    resetPasswordToken: { type: String },
+    resetPasswordExpires: { type: Date },
+    credentials: [{
+      credentialID: { type: String, required: true },
+      publicKey: { type: String, required: true }, // Store as base64 string
+      counter: { type: Number, default: 0 },
+      transports: [String],
+    }],
   },
   { timestamps: true }
 );

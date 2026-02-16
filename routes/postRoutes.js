@@ -1,8 +1,7 @@
 const express = require('express');
-const { createPost, editPost, deletePost, likePost, dislikePost, commentOnPost, getPostById, getAllPosts, getTenPosts, getPostsByUser, getMyPosts, updateComment, deleteComment, getFriendsPosts } = require('../controllers/postController');
+const { createPost, editPost, deletePost, likePost, dislikePost, commentOnPost, getPostById, getAllPosts, getTenPosts, getPostsByUser, getMyPosts, updateComment, deleteComment, getFriendsPosts, reactToPost, replyToComment, sharePost } = require('../controllers/postController');
 const { authenticate } = require('../middlewares/auth.js')
 const upload = require('../middlewares/multer');
-
 
 const router = express.Router();
 
@@ -20,8 +19,11 @@ router.get('/page/:page', authenticate, getTenPosts);
 
 router.post('/:postId/like', authenticate, likePost);
 router.post('/:postId/dislike', authenticate, dislikePost);
+router.post('/:postId/react', authenticate, reactToPost);
+router.post('/:postId/share', authenticate, sharePost);
 
 router.post('/:postId/comment', authenticate, commentOnPost);
+router.post('/:postId/comment/:commentId/reply', authenticate, replyToComment);
 router.put('/:postId/comment/:commentId', authenticate, updateComment);
 router.delete('/:postId/comment/:commentId', authenticate, deleteComment);
 

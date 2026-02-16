@@ -21,6 +21,22 @@ const createGroup = async (req, res) => {
   }
 
   try {
+    // Validate that all added users are friends or followed by the creator
+    const creator = await User.findById(userId).populate('friends following');
+    const allowedIds = new Set([
+      ...creator.friends.map(f => f._id.toString()),
+      ...creator.following.map(f => f._id.toString())
+    ]);
+
+    const unauthorizedUsers = parsedFriendIds.filter(id => !allowedIds.has(id));
+
+    if (unauthorizedUsers.length > 0) {
+      return res.status(403).json({
+        message: 'Solo puedes añadir a amigos o personas que sigues.',
+        invalidIds: unauthorizedUsers
+      });
+    }
+
     const users = await User.find({ _id: { $in: parsedFriendIds } });
     if (users.length !== parsedFriendIds.length) {
       return res.status(400).json({ message: 'Algunos amigos no existen.' });
@@ -45,21 +61,18 @@ const createGroup = async (req, res) => {
 
     const io = req.app.get('io');
     [...parsedFriendIds, userId].forEach((memberId) => {
-      const socketId = onlineUsers.get(memberId.toString());
-      if (socketId) {
-        io.to(socketId).emit('newConversation', {
-          _id: conversation._id,
-          name,
-          groupImage,
-          participants: conversation.participants,
-          isGroup: true,
-        });
-        io.to(socketId).emit('newNotification', {
-          message: `Fuiste añadido al grupo ${name}`,
-          type: 'group',
-          conversationId: conversation._id,
-        });
-      }
+      io.to(memberId.toString()).emit('newConversation', {
+        _id: conversation._id,
+        name,
+        groupImage,
+        participants: conversation.participants,
+        isGroup: true,
+      });
+      io.to(memberId.toString()).emit('newNotification', {
+        message: `Fuiste añadido al grupo ${name}`,
+        type: 'group',
+        conversationId: conversation._id,
+      });
     });
 
     res.status(201).json({ message: 'Grupo creado con éxito.', group: conversation });
@@ -77,7 +90,7 @@ const updateGroupImage = async (req, res) => {
     const group = await Conversation.findById(groupId);
     if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
 
-    if (!group.participants.includes(userId)) {
+    if (!group.participants.some(p => p.toString() === userId.toString())) {
       return res.status(403).json({ message: 'No tienes permiso para modificar este grupo' });
     }
 
@@ -94,10 +107,44 @@ const updateGroupImage = async (req, res) => {
       image: group.groupImage,
     });
 
+    // Notify update
+    io.to(`group:${groupId}`).emit('groupUpdated', group);
+
     res.json({ message: 'Imagen actualizada con éxito', group });
   } catch (error) {
     //console.error('[Grupo] Error al actualizar imagen del grupo:', error);
     res.status(500).json({ message: 'Error al actualizar la imagen del grupo' });
+  }
+};
+
+const updateGroupName = async (req, res) => {
+  const { groupId } = req.params;
+  const { name } = req.body;
+  const userId = req.user._id;
+
+  try {
+    const group = await Conversation.findById(groupId);
+    if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
+
+    // Allow any participant to update the name
+    if (!group.participants.some(p => p.toString() === userId.toString())) {
+      return res.status(403).json({ message: 'No tienes permiso para modificar este grupo' });
+    }
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'El nombre es requerido' });
+    }
+
+    group.name = name;
+    await group.save();
+
+    const io = req.app.get('io');
+    io.to(`group:${groupId}`).emit('groupUpdated', group);
+
+    res.json({ message: 'Nombre actualizado con éxito', group });
+  } catch (error) {
+    //console.error('[Grupo] Error al actualizar nombre del grupo:', error);
+    res.status(500).json({ message: 'Error al actualizar el nombre del grupo' });
   }
 };
 
@@ -124,20 +171,46 @@ const getGroupDetails = async (req, res) => {
   const userId = req.user._id;
 
   try {
-    const group = await Conversation.findById(groupId)
+    let group = await Conversation.findById(groupId)
       .populate("participants", "username profilePicture")
       .populate("createdBy", "username profilePicture")
       .lean();
 
     if (!group) {
+      // 2. Try Community Group
+      const CommunityGroup = require('../models/Group');
+      const community = await CommunityGroup.findById(groupId)
+        .populate("members", "username profilePicture")
+        .populate("creator", "username profilePicture")
+        .lean();
+
+      if (community) {
+        group = {
+          ...community,
+          participants: community.members,
+          createdBy: community.creator,
+          isGroup: true,
+          chatType: 'community',
+          groupImage: community.coverImage // Map coverImage to groupImage for consistency
+        };
+      }
+    } else {
+      group.chatType = 'group';
+    }
+
+    if (!group) {
       return res.status(404).json({ message: "Grupo no encontrado" });
     }
 
-    if (!group.participants.some((p) => p._id.toString() === userId.toString())) {
+    const isMember = (group.participants || group.members || []).some(
+      (p) => (p._id?.toString() || p.toString()) === userId.toString()
+    );
+
+    if (!isMember) {
       return res.status(403).json({ message: "No eres miembro de este grupo" });
     }
 
-    group.participants = (group.participants || []).map((p) => ({
+    group.participants = (group.participants || group.members || []).map((p) => ({
       _id: p._id.toString(),
       username: p.username || "Unknown",
       profilePicture:
@@ -146,13 +219,14 @@ const getGroupDetails = async (req, res) => {
           : "https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png",
     }));
 
-    if (group.createdBy) {
+    if (group.createdBy || group.creator) {
+      const creator = group.createdBy || group.creator;
       group.createdBy = {
-        _id: group.createdBy._id.toString(),
-        username: group.createdBy.username || "Unknown",
+        _id: creator._id.toString(),
+        username: creator.username || "Unknown",
         profilePicture:
-          group.createdBy.profilePicture && group.createdBy.profilePicture !== "/Uploads/undefined"
-            ? group.createdBy.profilePicture
+          creator.profilePicture && creator.profilePicture !== "/Uploads/undefined"
+            ? creator.profilePicture
             : "https://res.cloudinary.com/dpmufjj8y/image/upload/v1726000000/profile_pictures/default.png",
       };
     }
@@ -182,21 +256,18 @@ const updateParticipants = async (req, res) => {
     const group = await Conversation.findById(groupId);
     if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
 
-    if (!group.participants.includes(userId)) return res.status(403).json({ message: 'No tienes permiso' });
+    if (!group.participants.some(p => p.toString() === userId.toString())) return res.status(403).json({ message: 'No tienes permiso' });
 
     group.participants = participantIds;
     await group.save();
 
     const io = req.app.get('io');
     participantIds.forEach((memberId) => {
-      const socketId = onlineUsers.get(memberId.toString());
-      if (socketId) {
-        io.to(socketId).emit('newNotification', {
-          message: `Los participantes del grupo ${group.name} fueron actualizados`,
-          type: 'group',
-          conversationId: groupId,
-        });
-      }
+      io.to(memberId.toString()).emit('newNotification', {
+        message: `Los participantes del grupo ${group.name} fueron actualizados`,
+        type: 'group',
+        conversationId: groupId,
+      });
     });
 
     io.to(`group:${groupId}`).emit('groupUpdated', group);
@@ -249,7 +320,7 @@ const leaveGroup = async (req, res) => {
     const group = await Conversation.findById(groupId);
     if (!group) return res.status(404).json({ message: 'Grupo no encontrado' });
 
-    if (!group.participants.includes(userId))
+    if (!group.participants.some(p => p.toString() === userId.toString()))
       return res.status(403).json({ message: 'No eres miembro del grupo' });
 
     group.participants = group.participants.filter((member) => member.toString() !== userId);
@@ -263,8 +334,7 @@ const leaveGroup = async (req, res) => {
     });
 
     group.participants.forEach((memberId) => {
-      const socketId = onlineUsers.get(memberId.toString());
-      if (socketId) io.to(socketId).emit('groupUpdated', group);
+      io.to(memberId.toString()).emit('groupUpdated', group);
     });
 
     res.json({ message: 'Has salido del grupo con éxito' });
@@ -300,6 +370,7 @@ const getUserGroupsWithLastMessage = async (req, res) => {
 module.exports = {
   createGroup,
   updateGroupImage,
+  updateGroupName,
   getUserGroups,
   getGroupDetails,
   updateParticipants,

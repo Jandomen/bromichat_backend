@@ -7,12 +7,16 @@ const {
   getConversationById,
   deleteConversation,
   searchConversations,
+  updateConversation,
+  leaveConversation,
 } = require('../controllers/conversationController');
 
-router.get('/search', authenticate, searchConversations); 
+router.get('/search', authenticate, searchConversations);
 router.post('/create', authenticate, createConversation);
 router.get('/', authenticate, getConversations);
 router.get('/:id', authenticate, getConversationById);
+router.put('/:id', authenticate, updateConversation);
+router.post('/:id/leave', authenticate, leaveConversation);
 router.delete('/:id', authenticate, deleteConversation);
 
 module.exports = router;

@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Gallery = require('../models/Gallery');
 const { createNotification } = require('../config/notificationService');
+const onlineUsers = require('../sockets/onlineUsers');
 
 const addFriend = async (req, res) => {
   try {
@@ -35,7 +36,7 @@ const addFriend = async (req, res) => {
       senderId: userId,
       type: 'friend_request',
       message: `${user.username} te ha agregado como amig@`,
-      link: `/user/${userId}`, 
+      link: `/user/${userId}`,
       io,
     });
 
@@ -70,7 +71,7 @@ const addFriend = async (req, res) => {
       },
     });
   } catch (error) {
-   // console.error('Error al agregar amigo:', error);
+    // console.error('Error al agregar amigo:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -125,7 +126,7 @@ const removeFriend = async (req, res) => {
       isFriend: false,
     });
 
-   // console.log('Amigo eliminado');
+    // console.log('Amigo eliminado');
     res.status(200).json({
       message: 'Amigo eliminado',
       user: {
@@ -164,19 +165,19 @@ const followUser = async (req, res) => {
       return res.status(400).json({ message: 'Ya sigues a este usuario' });
     }
 
-   
+
     await Promise.all([
       User.findByIdAndUpdate(userId, { $addToSet: { following: targetId } }),
       User.findByIdAndUpdate(targetId, { $addToSet: { followers: userId } }),
     ]);
 
     await createNotification({
-      recipientId: targetId,        
-      senderId: userId,               
+      recipientId: targetId,
+      senderId: userId,
       message: `${user.username} ha comenzado a seguirte`,
-      type: 'new_follower',         
-      link: `/user/${userId}`,     
-      io,                            
+      type: 'new_follower',
+      link: `/user/${userId}`,
+      io,
     });
 
     const [updatedUser, updatedTargetUser] = await Promise.all([
@@ -209,7 +210,7 @@ const followUser = async (req, res) => {
       targetUser: updatedTargetUser,
     });
   } catch (error) {
-   // console.error('Error al seguir usuario:', error);
+    // console.error('Error al seguir usuario:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -262,7 +263,7 @@ const unfollowUser = async (req, res) => {
       followers: updatedTargetUser.followers,
     });
 
-   // console.log('Usuario dejado de seguir');
+    // console.log('Usuario dejado de seguir');
     res.status(200).json({
       message: 'Usuario dejado de seguir',
       user: {
@@ -274,7 +275,7 @@ const unfollowUser = async (req, res) => {
       targetUser: updatedTargetUser,
     });
   } catch (error) {
-   // console.error('Error al dejar de seguir:', error);
+    // console.error('Error al dejar de seguir:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -286,7 +287,7 @@ const blockUser = async (req, res) => {
     const io = req.app.get('io');
 
     if (userId === targetId) {
-    //  console.warn('No puedes bloquearte a ti mismo ');
+      //  console.warn('No puedes bloquearte a ti mismo ');
       return res.status(400).json({ message: 'No puedes bloquearte a ti mismo' });
     }
 
@@ -337,7 +338,7 @@ const blockUser = async (req, res) => {
       followers: updatedTargetUser.followers,
     });
 
-   // console.log('Usuario bloqueado correctamente :)');
+    // console.log('Usuario bloqueado correctamente :)');
     res.status(200).json({
       message: 'Usuario bloqueado',
       user: {
@@ -348,7 +349,7 @@ const blockUser = async (req, res) => {
       },
     });
   } catch (error) {
-   // console.error('Error al bloquear usuario:', error);
+    // console.error('Error al bloquear usuario:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -360,7 +361,7 @@ const unblockUser = async (req, res) => {
     const io = req.app.get('io');
 
     if (userId === targetId) {
-     // console.warn('No puedes desbloquearte a ti mismo :0');
+      // console.warn('No puedes desbloquearte a ti mismo :0');
       return res.status(400).json({ message: 'No puedes desbloquearte a ti mismo' });
     }
 
@@ -374,7 +375,7 @@ const unblockUser = async (req, res) => {
     }
 
     if (!user.blockedUsers.includes(targetId)) {
-     // console.warn('El usuario no está bloqueado');
+      // console.warn('El usuario no está bloqueado');
       return res.status(400).json({ message: 'Usuario no está bloqueado' });
     }
 
@@ -393,7 +394,7 @@ const unblockUser = async (req, res) => {
       blockerId: userId,
     });
 
-   // console.log('Usuario desbloqueado exitosamente :)');
+    // console.log('Usuario desbloqueado exitosamente :)');
     res.status(200).json({
       message: 'Usuario desbloqueado',
       user: {
@@ -404,7 +405,7 @@ const unblockUser = async (req, res) => {
       },
     });
   } catch (error) {
-   // console.error('Error al desbloquear usuario:', error);
+    // console.error('Error al desbloquear usuario:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -421,12 +422,17 @@ const getFriends = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-   // console.log('Amigos obtenidos correctamente :)');
+    // console.log('Amigos obtenidos correctamente :)');
+    const friendsWithStatus = user.friends.map(friend => ({
+      ...friend.toObject(),
+      isOnline: onlineUsers.has(friend._id.toString())
+    }));
+
     res.status(200).json({
-      friends: user.friends,
+      friends: friendsWithStatus,
     });
   } catch (error) {
-   // console.error('Error al obtener amigos:', error);
+    // console.error('Error al obtener amigos:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -443,12 +449,17 @@ const getFollowers = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-   // console.log('Seguidores obtenidos correctamente :)');
+    // console.log('Seguidores obtenidos correctamente :)');
+    const followersWithStatus = user.followers.map(follower => ({
+      ...follower.toObject(),
+      isOnline: onlineUsers.has(follower._id.toString())
+    }));
+
     res.status(200).json({
-      followers: user.followers,
+      followers: followersWithStatus,
     });
   } catch (error) {
-   // console.error('Error al obtener seguidores:', error);
+    // console.error('Error al obtener seguidores:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -456,7 +467,7 @@ const getFollowers = async (req, res) => {
 const getFollowing = async (req, res) => {
   try {
     const userId = req.params.id;
-     
+
 
     const user = await User.findById(userId)
       .populate('following', '_id username name lastName profilePicture')
@@ -466,12 +477,17 @@ const getFollowing = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-   // console.log('Usuarios seguidos obtenidos correctamente :)');
+    // console.log('Usuarios seguidos obtenidos correctamente :)');
+    const followingWithStatus = user.following.map(followed => ({
+      ...followed.toObject(),
+      isOnline: onlineUsers.has(followed._id.toString())
+    }));
+
     res.status(200).json({
-      following: user.following,
+      following: followingWithStatus,
     });
   } catch (error) {
-   // console.error('Error al obtener seguidos:', error);
+    // console.error('Error al obtener seguidos:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -488,12 +504,12 @@ const getBlockedUsers = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-   // console.log('Usuarios bloqueados obtenidos :)');
+    // console.log('Usuarios bloqueados obtenidos :)');
     res.status(200).json({
       blockedUsers: user.blockedUsers,
     });
   } catch (error) {
-   // console.error('Error al obtener usuarios bloqueados:', error);
+    // console.error('Error al obtener usuarios bloqueados:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -508,7 +524,7 @@ const getMyFollowing = async (req, res) => {
 
     res.status(200).json({ following: user.following });
   } catch (error) {
-   // console.error('Error al obtener usuarios que sigo:', error);
+    // console.error('Error al obtener usuarios que sigo:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };

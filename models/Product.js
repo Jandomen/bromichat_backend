@@ -5,12 +5,17 @@ const productSchema = new mongoose.Schema({
   title: { type: String, required: true },
   description: { type: String, required: true },
   price: { type: Number, required: true },
-  currency: { 
-    type: String, 
+  currency: {
+    type: String,
     enum: ["USD", "EUR", "MXN", "COP", "ARS"],
-    default: "USD" 
+    default: "USD"
   },
   imageUrl: { type: String, required: true },
+  category: {
+    type: String,
+    enum: ["Electrónica", "Moda", "Hogar", "Vehículos", "Mascotas", "Deportes", "Otros"],
+    default: "Otros"
+  },
   createdAt: { type: Date, default: Date.now }
 });
 

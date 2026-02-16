@@ -1,9 +1,9 @@
 const Product = require("../models/Product");
-const cloudinary = require('cloudinary').v2; 
+const cloudinary = require('cloudinary').v2;
 
 const createProduct = async (req, res) => {
   try {
-    const { title, description, price, currency, imageUrl } = req.body;
+    const { title, description, price, currency, imageUrl, category } = req.body;
 
     if (!title || !price || !imageUrl) {
       return res.status(400).json({ message: "Faltan campos obligatorios" });
@@ -16,13 +16,14 @@ const createProduct = async (req, res) => {
       price,
       currency: currency || "USD",
       imageUrl,
+      category: category || "Otros",
     });
 
     await product.save();
-   // console.log("✅ Producto creado:", product);
+    // console.log("✅ Producto creado:", product);
     res.status(201).json(product);
   } catch (error) {
-   // console.error("❌ Error al crear producto:", error);
+    // console.error("❌ Error al crear producto:", error);
     res.status(500).json({ message: "Error al crear producto" });
   }
 };
@@ -30,7 +31,7 @@ const createProduct = async (req, res) => {
 const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, price, currency, imageUrl } = req.body;
+    const { title, description, price, currency, imageUrl, category } = req.body;
 
     const product = await Product.findById(id);
     if (!product) return res.status(404).json({ message: "Producto no encontrado" });
@@ -44,11 +45,12 @@ const updateProduct = async (req, res) => {
     if (price) product.price = price;
     if (currency) product.currency = currency;
     if (imageUrl) product.imageUrl = imageUrl;
+    if (category) product.category = category;
 
     await product.save();
     res.json({ message: "Producto actualizado", product });
   } catch (error) {
-   // console.error("❌ Error al actualizar producto:", error);
+    // console.error("❌ Error al actualizar producto:", error);
     res.status(500).json({ message: "Error al actualizar producto" });
   }
 };
@@ -60,7 +62,7 @@ const getUserProducts = async (req, res) => {
       .populate("user", "username profilePicture");
     res.json(products);
   } catch (error) {
-   // console.error("❌ Error al obtener productos del usuario:", error);
+    // console.error("❌ Error al obtener productos del usuario:", error);
     res.status(500).json({ message: "Error al obtener productos del usuario" });
   }
 };
@@ -68,14 +70,22 @@ const getUserProducts = async (req, res) => {
 const searchProducts = async (req, res) => {
   try {
     const query = req.query.query || "";
-    const products = await Product.find({
+    const category = req.query.category;
+
+    const filter = {
       title: { $regex: query, $options: "i" },
-    })
+    };
+
+    if (category && category !== "Todas") {
+      filter.category = category;
+    }
+
+    const products = await Product.find(filter)
       .limit(40)
       .populate("user", "username profilePicture");
     res.json(products);
   } catch (error) {
-   // console.error("❌ Error al buscar productos:", error);
+    // console.error("❌ Error al buscar productos:", error);
     res.status(500).json({ message: "Error al buscar productos" });
   }
 };
@@ -83,10 +93,17 @@ const searchProducts = async (req, res) => {
 const getRandomProducts = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
+    const { category } = req.query;
     const limit = 20;
     const skip = (page - 1) * limit;
 
+    const matchStage = {};
+    if (category && category !== "Todas") {
+      matchStage.category = category;
+    }
+
     const products = await Product.aggregate([
+      { $match: matchStage },
       { $sample: { size: 200 } },
       { $skip: skip },
       { $limit: limit },
@@ -99,7 +116,7 @@ const getRandomProducts = async (req, res) => {
 
     res.json(productsWithUser);
   } catch (error) {
-   // console.error("❌ Error al obtener feed random:", error);
+    // console.error("❌ Error al obtener feed random:", error);
     res.status(500).json({ message: "Error al obtener feed random" });
   }
 };
@@ -118,7 +135,7 @@ const deleteProduct = async (req, res) => {
     await product.deleteOne();
     res.json({ message: "Producto eliminado" });
   } catch (error) {
-   // console.error("❌ Error al eliminar producto:", error);
+    // console.error("❌ Error al eliminar producto:", error);
     res.status(500).json({ message: "Error al eliminar producto" });
   }
 };
@@ -126,7 +143,7 @@ const deleteProduct = async (req, res) => {
 const uploadProductImage = async (req, res) => {
   try {
     if (!req.file) {
-     // console.log('⚠️ No se subió ninguna imagen');
+      // console.log('⚠️ No se subió ninguna imagen');
       return res.status(400).json({ message: 'No se subió ninguna imagen' });
     }
 
@@ -141,10 +158,10 @@ const uploadProductImage = async (req, res) => {
         { folder: 'products', resource_type: 'image' },
         (error, result) => {
           if (error) {
-           // console.error(`❌ Error subiendo imagen a Cloudinary: ${error.message}`);
+            // console.error(`❌ Error subiendo imagen a Cloudinary: ${error.message}`);
             return reject(error);
           }
-         // console.log(`✅ Imagen subida a Cloudinary: ${result.secure_url}`);
+          // console.log(`✅ Imagen subida a Cloudinary: ${result.secure_url}`);
           resolve(result);
         }
       );
@@ -153,7 +170,7 @@ const uploadProductImage = async (req, res) => {
 
     res.json({ url: result.secure_url });
   } catch (error) {
-   // console.error('❌ Error subiendo imagen a Cloudinary:', error);
+    // console.error('❌ Error subiendo imagen a Cloudinary:', error);
     res.status(500).json({ message: 'Error subiendo imagen', error: error.message });
   }
 };

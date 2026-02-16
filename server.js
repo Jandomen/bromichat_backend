@@ -18,13 +18,33 @@ const galleryRoutes = require('./routes/galleryRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const productRoutes = require('./routes/productRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const communityRoutes = require('./routes/communityRoutes');
+const storyRoutes = require('./routes/storyRoutes');
+const webauthnRoutes = require('./routes/webauthnRoutes');
+const session = require('express-session');
 
 const app = express();
 const server = http.createServer(app);
 
+// Session configuration for WebAuthn challenges
+app.use(session({
+  secret: process.env.SECRET_KEY || 'biometric-secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true if using HTTPS
+    maxAge: 30 * 60 * 1000, // 30 minutes
+    sameSite: 'lax',
+    httpOnly: true,
+  }
+}));
+
 const allowedOrigins = [
-  
-   "https://bromichat.vercel.app",
+
+  "https://bromichat.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:3001",
+
 ];
 
 app.use(cors({
@@ -48,6 +68,7 @@ const io = socketIO(server, {
 
 require('./sockets/chat')(io);
 require('./sockets/notification')(io);
+require('./sockets/call')(io);
 
 connectDB();
 
@@ -56,7 +77,7 @@ app.use(express.urlencoded({ extended: true }));
 app.set('io', io);
 
 
-app.use('/assets', express.static(path.join(__dirname, '../frontend/src/assets')));
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
@@ -69,6 +90,9 @@ app.use('/gallery', galleryRoutes);
 app.use('/videos', videoRoutes);
 app.use('/api/products', productRoutes);
 app.use('/notifications', notificationRoutes);
+app.use('/communities', communityRoutes);
+app.use('/stories', storyRoutes);
+app.use('/webauthn', webauthnRoutes);
 
 const PORT = process.env.PORT;
 server.listen(PORT, () => {

@@ -1,30 +1,38 @@
 const User = require('../models/User');
 const mongoose = require('mongoose');
-const Post = require('../models/Post'); 
+const Post = require('../models/Post');
 const Comment = require('../models/Comment');
+const Story = require('../models/Story');
 const { uploadToCloudinary } = require('../config/cloudinaryConfig');
 
+
+const bcrypt = require('bcrypt');
 
 const getUserProfile = async (req, res) => {
   try {
     const userId = req.params.id;
     const currentUserId = req.user._id;
 
-    const [currentUser, targetUser] = await Promise.all([
+    const [currentUser, targetUser, activeStories] = await Promise.all([
       User.findById(currentUserId).select('friends following blockedUsers'),
       User.findById(userId)
         .populate('friends', '_id username name lastName profilePicture')
         .populate('followers', '_id username name lastName profilePicture')
         .populate('following', '_id username name lastName profilePicture')
         .populate('blockedUsers', '_id username name lastName profilePicture')
-        .select('name lastName username email phone birthdate profilePicture bio friends followers following blockedUsers createdAt'),
+        .select('name lastName username email phone birthdate profilePicture coverPhoto bio friends followers following blockedUsers createdAt privacySettings'),
+      Story.find({
+        user: userId,
+        expiresAt: { $gt: new Date() }
+      }).sort({ createdAt: 1 })
     ]);
+
 
     if (!targetUser) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-   
+
     if (currentUser.blockedUsers.some(b => b._id.toString() === userId)) {
       return res.status(403).json({ message: 'Has bloqueado a este usuario' });
     }
@@ -32,11 +40,19 @@ const getUserProfile = async (req, res) => {
       return res.status(403).json({ message: 'Este usuario te ha bloqueado' });
     }
 
+    const storiesWithStatus = activeStories.map(story => ({
+      ...story.toObject(),
+      viewedByUser: story.views.some(v => v.user.toString() === currentUserId.toString())
+    }));
+
     const responseUser = {
       ...targetUser.toObject(),
       isFriend: currentUser.friends.some(f => f._id.toString() === userId),
       isFollowing: currentUser.following.some(f => f._id.toString() === userId),
       isBlocked: currentUser.blockedUsers.some(b => b._id.toString() === userId),
+      stories: storiesWithStatus,
+      hasStories: activeStories.length > 0,
+      allStoriesViewed: activeStories.length > 0 && storiesWithStatus.every(s => s.viewedByUser)
     };
 
     //console.log('Depuración - Datos devueltos por getUserProfile:', responseUser);
@@ -60,14 +76,18 @@ const getUserProfileId = async (req, res) => {
   }
 
   try {
-    const [currentUser, targetUser] = await Promise.all([
+    const [currentUser, targetUser, activeStories] = await Promise.all([
       User.findById(currentUserId).select('friends following blockedUsers'),
       User.findById(userId)
         .populate('friends', '_id username name lastName profilePicture')
         .populate('followers', '_id username name lastName profilePicture')
         .populate('following', '_id username name lastName profilePicture')
         .populate('blockedUsers', '_id username name lastName profilePicture')
-        .select('name lastName username email phone birthdate profilePicture bio friends followers following blockedUsers createdAt'),
+        .select('name lastName username email phone birthdate profilePicture coverPhoto bio friends followers following blockedUsers createdAt'),
+      Story.find({
+        user: userId,
+        expiresAt: { $gt: new Date() }
+      }).sort({ createdAt: 1 })
     ]);
 
     if (!targetUser) {
@@ -85,6 +105,11 @@ const getUserProfileId = async (req, res) => {
     const isFollowing = currentUser.following.some(f => f._id.toString() === userId);
     const isBlocked = currentUser.blockedUsers.some(b => b._id.toString() === userId);
 
+    const storiesWithStatus = activeStories.map(story => ({
+      ...story.toObject(),
+      viewedByUser: story.views.some(v => v.user.toString() === currentUserId.toString())
+    }));
+
     const responseUser = {
       _id: targetUser._id,
       username: targetUser.username,
@@ -94,6 +119,7 @@ const getUserProfileId = async (req, res) => {
       phone: targetUser.phone,
       birthdate: targetUser.birthdate,
       profilePicture: targetUser.profilePicture,
+      coverPhoto: targetUser.coverPhoto,
       bio: targetUser.bio,
       friends: targetUser.friends,
       followers: targetUser.followers,
@@ -103,6 +129,9 @@ const getUserProfileId = async (req, res) => {
       isFriend,
       isFollowing,
       isBlocked,
+      stories: storiesWithStatus,
+      hasStories: activeStories.length > 0,
+      allStoriesViewed: activeStories.length > 0 && storiesWithStatus.every(s => s.viewedByUser)
     };
 
     //console.log('Depuración - Datos devueltos por getUserProfileId:', responseUser);
@@ -120,16 +149,23 @@ const getUsers = async (req, res) => {
     const { page = 1, limit = 10 } = req.query;
     const skip = (page - 1) * limit;
 
-    const users = await User.find()
+    const currentUser = await User.findById(req.user._id).select('blockedUsers');
+    const users = await User.find({
+      _id: { $nin: currentUser.blockedUsers },
+      blockedUsers: { $nin: [req.user._id] }
+    })
       .populate('friends', '_id username name lastName profilePicture')
       .populate('followers', '_id username name lastName profilePicture')
       .populate('following', '_id username name lastName profilePicture')
       .skip(parseInt(skip))
       .limit(parseInt(limit))
-      .select('name lastName username email profilePicture friends followers following')
+      .select('name lastName username email profilePicture coverPhoto friends followers following')
       .exec();
 
-    const totalUsers = await User.countDocuments();
+    const totalUsers = await User.countDocuments({
+      _id: { $nin: currentUser.blockedUsers },
+      blockedUsers: { $nin: [req.user._id] }
+    });
 
     res.json({
       users,
@@ -161,7 +197,6 @@ const searchUsers = async (req, res) => {
         { lastName: { $regex: query, $options: 'i' } },
       ],
       _id: {
-        $ne: userId,
         $nin: currentUser.blockedUsers,
       },
       blockedUsers: { $nin: [userId] },
@@ -173,7 +208,7 @@ const searchUsers = async (req, res) => {
       .populate('friends', '_id username name lastName profilePicture')
       .populate('followers', '_id username name lastName profilePicture')
       .populate('following', '_id username name lastName profilePicture')
-      .select('username name lastName email profilePicture friends followers following')
+      .select('username name lastName email profilePicture coverPhoto friends followers following')
       .exec();
 
     const totalUsers = await User.countDocuments(filter);
@@ -211,7 +246,7 @@ const getUserDetails = async (req, res) => {
       .populate('followers', '_id username name lastName profilePicture')
       .populate('following', '_id username name lastName profilePicture')
       .populate('blockedUsers', '_id username name lastName profilePicture')
-      .select('username profilePicture friends followers following blockedUsers');
+      .select('username profilePicture coverPhoto friends followers following blockedUsers');
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -241,13 +276,17 @@ const getFullUserData = async (req, res) => {
   }
 
   try {
-    const [currentUser, targetUser] = await Promise.all([
+    const [currentUser, targetUser, activeStories] = await Promise.all([
       User.findById(currentUserId).select('friends following blockedUsers'),
       User.findById(userId)
         .populate('friends', '_id username name lastName profilePicture')
         .populate('followers', '_id username name lastName profilePicture')
         .populate('following', '_id username name lastName profilePicture')
-        .select('name lastName username email phone birthdate profilePicture bio friends followers following createdAt'),
+        .select('name lastName username email phone birthdate profilePicture coverPhoto bio friends followers following createdAt'),
+      Story.find({
+        user: userId,
+        expiresAt: { $gt: new Date() }
+      }).sort({ createdAt: 1 })
     ]);
 
     if (!targetUser) {
@@ -265,11 +304,17 @@ const getFullUserData = async (req, res) => {
     const posts = await Post.find({ user: userId })
       .populate('comments.user', 'username profilePicture')
       .populate('user', 'username profilePicture')
+      .populate('reactions.user', 'username profilePicture')
       .sort({ createdAt: -1 });
 
     const isFriend = currentUser.friends.some(f => f._id.toString() === userId);
     const isFollowing = currentUser.following.some(f => f._id.toString() === userId);
     const isBlocked = currentUser.blockedUsers.some(b => b._id.toString() === userId);
+
+    const storiesWithStatus = activeStories.map(story => ({
+      ...story.toObject(),
+      viewedByUser: story.views.some(v => v.user.toString() === currentUserId.toString())
+    }));
 
     const fullData = {
       user: {
@@ -277,6 +322,9 @@ const getFullUserData = async (req, res) => {
         isFriend,
         isFollowing,
         isBlocked,
+        stories: storiesWithStatus,
+        hasStories: activeStories.length > 0,
+        allStoriesViewed: activeStories.length > 0 && storiesWithStatus.every(s => s.viewedByUser)
       },
       posts,
       followers: targetUser.followers,
@@ -309,7 +357,7 @@ const updateProfilePicture = async (req, res) => {
       userId,
       { profilePicture: result.secure_url },
       { new: true }
-    ).select('username profilePicture');
+    ).select('username profilePicture coverPhoto');
 
     if (!updatedUser) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
@@ -321,6 +369,37 @@ const updateProfilePicture = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al actualizar la foto de perfil:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+const updateCoverPhoto = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ message: 'Archivo de imagen requerido' });
+    }
+
+    // Subir directamente a Cloudinary
+    const result = await uploadToCloudinary(req.file.buffer, 'cover_photos');
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { coverPhoto: result.secure_url },
+      { new: true }
+    ).select('username profilePicture coverPhoto');
+
+    if (!updatedUser) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.status(200).json({
+      message: 'Foto de portada actualizada con éxito',
+      user: updatedUser,
+    });
+  } catch (error) {
+    console.error('Error al actualizar la foto de portada:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 };
@@ -360,7 +439,7 @@ const deleteProfilePicture = async (req, res) => {
 
 
 const updateBio = async (req, res, next) => {
-  const { userId } = req.params; 
+  const { userId } = req.params;
   const { bio } = req.body;
 
   try {
@@ -369,7 +448,7 @@ const updateBio = async (req, res, next) => {
       return res.status(404).json({ error: 'Usuario no encontrado' });
     }
 
-    user.bio = bio || user.bio; 
+    user.bio = bio || user.bio;
     await user.save();
 
     //console.log('Bio actualizada con éxito :)');
@@ -409,6 +488,174 @@ const deleteAccount = async (req, res) => {
   }
 };
 
+const updatePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user._id;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.status(400).json({ message: 'Contraseña actual incorrecta' });
+
+    if (newPassword.length < 8) return res.status(400).json({ message: 'La nueva contraseña debe tener al menos 8 caracteres' });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: 'Contraseña actualizada correctamente' });
+  } catch (error) {
+    console.error('Error updating password:', error);
+    res.status(500).json({ message: 'Error al actualizar la contraseña' });
+  }
+};
+
+const updateEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const userId = req.user._id;
+
+    if (!email) return res.status(400).json({ message: 'Email requerido' });
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser && existingUser._id.toString() !== userId.toString()) {
+      return res.status(400).json({ message: 'El email ya está en uso' });
+    }
+
+    const user = await User.findByIdAndUpdate(userId, { email }, { new: true });
+    res.json({ message: 'Email actualizado correctamente', user });
+  } catch (error) {
+    console.error('Error updating email:', error);
+    res.status(500).json({ message: 'Error al actualizar el email' });
+  }
+};
+
+const updatePrivacySettings = async (req, res) => {
+  try {
+    const { profileVisibility, messagePrivacy } = req.body;
+    const userId = req.user._id;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'Usuario no encontrado' });
+
+    if (profileVisibility) user.privacySettings.profileVisibility = profileVisibility;
+    if (messagePrivacy) user.privacySettings.messagePrivacy = messagePrivacy;
+
+    await user.save();
+    res.json({ message: 'Configuración de privacidad actualizada', privacySettings: user.privacySettings });
+  } catch (error) {
+    console.error('Error updating privacy settings:', error);
+    res.status(500).json({ message: 'Error al actualizar privacidad' });
+  }
+};
+
+const updateStorySettings = async (req, res) => {
+  try {
+    const { defaultDuration, saveToArchive } = req.body;
+    const allowed = [1, 3, 6, 12, 24, 72];
+    const updateData = {};
+
+    if (defaultDuration !== undefined) {
+      if (!allowed.includes(Number(defaultDuration))) {
+        return res.status(400).json({ message: 'Duración no permitida' });
+      }
+      updateData['storySettings.defaultDuration'] = defaultDuration;
+    }
+
+    if (saveToArchive !== undefined) {
+      updateData['storySettings.saveToArchive'] = saveToArchive;
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      updateData,
+      { new: true }
+    );
+
+    res.json({ message: 'Configuración de historias actualizada', storySettings: user.storySettings });
+  } catch (error) {
+    console.error('Error updating story settings:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+const updateSosSettings = async (req, res) => {
+  try {
+    const { isEnabled, message, emergencyContacts } = req.body;
+
+    // Limit contacts to 5
+    const contacts = (emergencyContacts || []).slice(0, 5);
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      {
+        'sosSettings.isEnabled': isEnabled,
+        'sosSettings.message': message,
+        'sosSettings.emergencyContacts': contacts
+      },
+      { new: true }
+    );
+
+    res.json({ message: 'Configuración SOS actualizada', sosSettings: user.sosSettings });
+  } catch (error) {
+    console.error('Error updating SOS settings:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+const toggleSavePost = async (req, res) => {
+  try {
+    const { postId } = req.params;
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(postId)) {
+      return res.status(400).json({ message: 'ID de publicación inválido' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    const isSaved = user.savedPosts.includes(postId);
+
+    if (isSaved) {
+      user.savedPosts = user.savedPosts.filter((id) => id.toString() !== postId);
+    } else {
+      user.savedPosts.push(postId);
+    }
+
+    await user.save();
+    res.json({ message: isSaved ? 'Publicación eliminada de guardados' : 'Publicación guardada', isSaved: !isSaved });
+  } catch (error) {
+    console.error('Error in toggleSavePost:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
+const getSavedPosts = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findById(userId).populate({
+      path: 'savedPosts',
+      populate: [
+        { path: 'user', select: 'username profilePicture' },
+        { path: 'comments', populate: { path: 'user', select: 'username profilePicture' } }
+      ]
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.json(user.savedPosts);
+  } catch (error) {
+    console.error('Error in getSavedPosts:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+};
+
 module.exports = {
   getUserProfile,
   getUsers,
@@ -417,7 +664,15 @@ module.exports = {
   getUserProfileId,
   getFullUserData,
   updateProfilePicture,
+  updateCoverPhoto,
   deleteProfilePicture,
   updateBio,
   deleteAccount,
+  updatePassword,
+  updateEmail,
+  updatePrivacySettings,
+  updateStorySettings,
+  updateSosSettings,
+  toggleSavePost,
+  getSavedPosts,
 };

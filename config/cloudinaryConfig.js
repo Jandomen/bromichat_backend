@@ -15,22 +15,24 @@ const storage = new CloudinaryStorage({
   },
 });
 
-const uploadToCloudinary = async (buffer) => {
+const uploadToCloudinary = async (buffer, folder = 'chat_files', resourceType = 'auto', options = {}) => {
   try {
     if (!buffer || buffer.length === 0) {
-      //console.error('Buffer vacío recibido en uploadToCloudinary');
       throw new Error('Empty file buffer');
     }
     return new Promise((resolve, reject) => {
-      //console.log('Subiendo archivo a Cloudinary, buffer size:', buffer.length);
+      const uploadOptions = {
+        folder,
+        resource_type: resourceType,
+        ...options
+      };
+
       const stream = cloudinary.uploader.upload_stream(
-        { folder: 'chat_files', resource_type: 'auto' },
+        uploadOptions,
         (error, result) => {
           if (error) {
-            //console.error('Cloudinary upload error:', error);
             reject(error);
           } else {
-            //console.log('Cloudinary upload success:', result.secure_url);
             resolve(result);
           }
         }
@@ -38,7 +40,6 @@ const uploadToCloudinary = async (buffer) => {
       stream.end(buffer);
     });
   } catch (error) {
-    //console.error('Error en uploadToCloudinary:', error);
     throw new Error('Failed to upload file to Cloudinary');
   }
 };

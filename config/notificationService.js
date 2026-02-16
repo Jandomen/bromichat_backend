@@ -1,60 +1,66 @@
 const Notification = require('../models/Notification');
 
-const createNotification = async ({ recipientId, senderId, message, type, link, postId, conversationId, io }) => {
+const createNotification = async ({ recipientId, senderId, message, type, link, postId, commentId, videoId, galleryId, conversationId, io }) => {
+  const rId = recipientId?._id || recipientId;
+  const sId = senderId?._id || senderId;
+
+  if (rId && sId && rId.toString() === sId.toString()) {
+    return null;
+  }
   try {
-    const existingNotification = await Notification.findOne({
-      recipient: recipientId,
-      sender: senderId,
-      type,
-      postId: postId || null,
-      conversationId: conversationId || null,
-      isRead: false,
-    });
+    const existingNotification = (['message', 'group_message'].includes(type))
+      ? null
+      : await Notification.findOne({
+        recipient: rId,
+        sender: sId,
+        type,
+        postId: postId || null,
+        commentId: commentId || null,
+        videoId: videoId || null,
+        galleryId: galleryId || null,
+        conversationId: conversationId || null,
+        isRead: false,
+      });
+
     if (existingNotification) {
-     // console.log(`Notificación ya existe para ${type}`);
+      if (io) {
+        const populated = await existingNotification.populate('sender', 'username name lastName profilePicture');
+        // console.log(`🚀 Emitiendo notificación existente a sala: ${rId.toString()}`);
+        io.to(rId.toString()).emit('newNotification', populated);
+      }
       return existingNotification;
     }
 
     const notification = new Notification({
-      recipient: recipientId,
-      sender: senderId,
+      recipient: rId,
+      sender: sId,
       message,
       type,
       isRead: false,
       link,
       postId: postId || null,
+      commentId: commentId || null,
+      videoId: videoId || null,
+      galleryId: galleryId || null,
       conversationId: conversationId || null,
     });
     await notification.save();
 
     if (io) {
-      io.to(recipientId.toString()).emit('newNotification', {
-        _id: notification._id,
-        recipientId,
-        senderId,
-        message,
-        type,
-        isRead: false,
-        createdAt: notification.createdAt,
-        link,
-        postId: notification.postId,
-        conversationId: notification.conversationId,
-      });
-     // console.log(`✅ Notificación enviada a usuario ${recipientId}: ${message}`);
-    } else {
-     // console.error('❌ Socket.IO instance not found');
+      const populatedNotification = await notification.populate('sender', 'username name lastName profilePicture');
+      // console.log(`🚀 Emitiendo nueva notificación a sala: ${rId.toString()}`);
+      io.to(rId.toString()).emit('newNotification', populatedNotification);
     }
 
     return notification;
   } catch (error) {
-   // console.error('❌ Error creando la notificación:', error);
     throw error;
   }
 };
 
 const createCommentNotification = async ({ post, sender, io }) => {
   return createNotification({
-    recipientId: post.author,
+    recipientId: post.user,
     senderId: sender._id,
     message: `${sender.username} comentó tu publicación`,
     type: 'comment',
@@ -66,7 +72,7 @@ const createCommentNotification = async ({ post, sender, io }) => {
 
 const createLikeNotification = async ({ post, sender, io }) => {
   return createNotification({
-    recipientId: post.author,
+    recipientId: post.user,
     senderId: sender._id,
     message: `${sender.username} le dio like a tu publicación`,
     type: 'like',
@@ -83,14 +89,15 @@ const createMessageNotification = async ({ conversation, recipientIds, sender, i
     const notifications = [];
 
     for (const recipientId of recipientIds) {
-      if (recipientId.toString() === sender._id.toString()) continue; // no notificar al remitente
+      // Allow self-notifications for testing/multi-tab sync in messages
+      // if (recipientId.toString() === sender._id.toString()) continue;
 
       const notification = new Notification({
         recipient: recipientId,
         sender: sender._id,
         message: `${sender.username} te envió un mensaje${conversation.isGroup ? ` en el grupo ${conversation.name || 'sin nombre'}` : ''}`,
         type: conversation.isGroup ? 'group_message' : 'message',
-        link: conversation.isGroup ? `/groups/${conversation._id}` : `/messages/${conversation._id}`,
+        link: `/messages/${conversation._id}`,
         conversationId: conversation._id,
         isRead: false,
       });
@@ -98,18 +105,10 @@ const createMessageNotification = async ({ conversation, recipientIds, sender, i
       await notification.save();
 
       if (io) {
-        io.to(recipientId.toString()).emit('newNotification', {
-          _id: notification._id,
-          recipientId,
-          senderId: sender._id,
-          message: notification.message,
-          type: notification.type,
-          isRead: false,
-          createdAt: notification.createdAt,
-          link: notification.link,
-          conversationId: notification.conversationId,
-        });
-       // console.log(`✅ Notificación enviada a usuario ${recipientId}: ${notification.message}`);
+        const populatedNotification = await notification.populate('sender', 'username name lastName profilePicture');
+        const room = recipientId?._id ? recipientId._id.toString() : recipientId.toString();
+        // console.log(`🚀 Emitiendo 'newNotification' a sala ${room} para mensaje de ${sender.username}`);
+        io.to(room).emit('newNotification', populatedNotification);
       }
 
       notifications.push(notification);
@@ -117,7 +116,7 @@ const createMessageNotification = async ({ conversation, recipientIds, sender, i
 
     return notifications;
   } catch (error) {
-   // console.error('❌ Error creando notificaciones de mensaje:', error);
+    // console.error('❌ Error creando notificaciones de mensaje:', error);
     throw error;
   }
 };

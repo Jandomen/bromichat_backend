@@ -5,61 +5,54 @@ const setupChatSocket = (io) => {
   io.on('connection', (socket) => {
     const userId = socket.handshake.query?.userId || socket.handshake.auth?.userId;
     if (!userId) {
-    //  console.error('⚠️ Conexión rechazada: userId no proporcionado');
-      socket.disconnect(true);
+      // console.warn('⚠️ Conexión de socket sin userId detectada');
       return;
     }
 
-    socket.userId = userId.toString();
-    onlineUsers.set(socket.userId, socket.id);
-  //  console.log(`🟢 Usuario conectado: ${socket.userId} -> ${socket.id}`);
+    const uId = userId.toString();
+    socket.userId = uId;
+
+    // Check if this is the first connection for this user
+    const isFirstConnection = !onlineUsers.has(uId);
+    onlineUsers.add(uId, socket.id);
+    socket.join(uId);
+
+    if (isFirstConnection) {
+      io.emit('userStatusChanged', { userId: uId, status: 'online' });
+      // console.log(`🟢 Usuario ${uId} se ha conectado (Primer dispositivo)`);
+    }
+
+    socket.on('getInitialOnlineUsers', () => {
+      socket.emit('initialOnlineUsers', onlineUsers.getAllOnlineUserIds());
+    });
 
     socket.on('join_conversation', ({ conversationId, userId: payloadUserId }) => {
-      if (!conversationId) {
-      //  console.warn('join_conversation: conversationId missing');
-        return;
-      }
+      if (!conversationId) return;
       const roomId = `conversation:${conversationId}`;
       socket.join(roomId);
       socket.currentRoom = roomId;
-    //  console.log(`🟡 Usuario ${payloadUserId || socket.userId} se unió a ${roomId}`);
     });
 
     socket.on('join_group', ({ groupId }) => {
-      if (!groupId) {
-      //  console.warn('join_group: groupId missing');
-        return;
-      }
+      if (!groupId) return;
       const roomId = `group:${groupId}`;
       if (socket.currentRoom) {
         socket.leave(socket.currentRoom);
-      //  console.log(`🟠 Usuario ${socket.userId} salió de ${socket.currentRoom}`);
       }
       socket.join(roomId);
       socket.currentRoom = roomId;
-    //  console.log(`🟡 Usuario ${socket.userId} se unió a ${roomId}`);
-    });
-
-    socket.on('leave_group', ({ groupId }) => {
-      const roomId = `group:${groupId}`;
-      socket.leave(roomId);
-      if (socket.currentRoom === roomId) socket.currentRoom = null;
-    //  console.log(`🟠 Usuario ${socket.userId} salió de ${roomId}`);
-    });
-
-    socket.on('leave_conversation', ({ conversationId }) => {
-      const roomId = `conversation:${conversationId}`;
-      socket.leave(roomId);
-      if (socket.currentRoom === roomId) socket.currentRoom = null;
-    //  console.log(`🟠 Usuario ${socket.userId} salió de ${roomId}`);
     });
 
     socket.on('disconnect', () => {
-    //  console.log(`🔴 Usuario desconectado: ${socket.userId}`);
-      onlineUsers.delete(socket.userId);
+      if (socket.userId) {
+        const wasLastSocket = onlineUsers.remove(socket.userId, socket.id);
+        if (wasLastSocket) {
+          io.emit('userStatusChanged', { userId: socket.userId, status: 'offline' });
+          // console.log(`🔴 Usuario ${socket.userId} se ha desconectado (Todos los dispositivos)`);
+        }
+      }
       if (socket.currentRoom) {
         socket.leave(socket.currentRoom);
-      //  console.log(`🟠 Usuario ${socket.userId} salió de ${socket.currentRoom}`);
       }
     });
   });

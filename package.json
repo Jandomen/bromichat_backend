@@ -1,5 +1,7 @@
 {
   "dependencies": {
+    "@simplewebauthn/server": "^9.0.3",
+    "axios": "^1.13.3",
     "bcrypt": "^5.1.1",
     "body-parser": "^1.20.3",
     "cloudinary": "^1.41.3",
@@ -12,6 +14,7 @@
     "mongoose": "^8.5.2",
     "multer": "^1.4.5-lts.1",
     "multer-storage-cloudinary": "^4.0.0",
+    "nodemailer": "^7.0.12",
     "nodemon": "^3.1.4",
     "socket.io": "^4.7.5",
     "streamifier": "^0.1.1"

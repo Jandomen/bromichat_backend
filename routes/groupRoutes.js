@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const { storage } = require('../middlewares/multer'); 
-const upload = multer({ storage });
+const upload = require('../middlewares/multer');
 const { authenticate } = require('../middlewares/auth');
 const {
   createGroup,
   updateGroupImage,
+  updateGroupName,
   getUserGroups,
   getGroupDetails,
   updateParticipants,
@@ -17,6 +16,7 @@ const {
 
 router.post('/create', authenticate, upload.single('groupImage'), createGroup);
 router.put('/:groupId/update-image', authenticate, upload.single('groupImage'), updateGroupImage);
+router.put('/:groupId', authenticate, updateGroupName);
 
 router.get('/groups', authenticate, getUserGroups);
 router.get('/groups/with-last-message', authenticate, getUserGroupsWithLastMessage);
