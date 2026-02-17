@@ -48,13 +48,13 @@ app.use(session({
 }));
 
 const allowedOrigins = [
-
   "https://bromichat.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
   "capacitor://localhost",
-  "app://localhost"
-
+  "app://localhost",
+  "http://localhost",
+  "https://localhost"
 ];
 
 app.use(cors({
