@@ -6,6 +6,12 @@ const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
 const connectDB = require('./config/db');
+const initSettings = require('./utils/initSettings');
+
+// ...
+connectDB().then(() => {
+  initSettings();
+});
 
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
@@ -21,6 +27,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const communityRoutes = require('./routes/communityRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const webauthnRoutes = require('./routes/webauthnRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 const session = require('express-session');
 require('./config/firebase'); // Inicializar Firebase Admin
 
@@ -45,6 +52,8 @@ const allowedOrigins = [
   "https://bromichat.vercel.app",
   "http://localhost:3000",
   "http://localhost:3001",
+  "capacitor://localhost",
+  "app://localhost"
 
 ];
 
@@ -94,6 +103,10 @@ app.use('/notifications', notificationRoutes);
 app.use('/communities', communityRoutes);
 app.use('/stories', storyRoutes);
 app.use('/webauthn', webauthnRoutes);
+app.use('/admin', adminRoutes);
+
+const { getPublicSettings } = require('./controllers/settingsController');
+app.get('/settings/public', getPublicSettings);
 
 const PORT = process.env.PORT;
 server.listen(PORT, () => {

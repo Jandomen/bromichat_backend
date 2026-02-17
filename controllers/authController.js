@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const User = require('../models/User');
+const AppSetting = require('../models/AppSetting');
 const { sendVerificationEmail, sendResetPasswordEmail } = require('../utils/mailService');
 const admin = require('../config/firebase');
 
@@ -28,6 +29,9 @@ const register = async (req, res, next) => {
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
 
+    const setting = await AppSetting.findOne({ key: 'strictEmailVerification' });
+    const isStrict = setting ? setting.value : true;
+
     const user = new User({
       username,
       name,
@@ -37,7 +41,7 @@ const register = async (req, res, next) => {
       phone,
       birthdate: birthdateObj,
       verificationToken,
-      isVerified: false // Ahora empezamos como no verificado
+      isVerified: !isStrict // Si no es strict, lo marcamos como verificado
     });
 
     // Intentar crear usuario en Firebase
@@ -54,7 +58,7 @@ const register = async (req, res, next) => {
         // Nota: Admin SDK no envía el correo directamente, genera el link o usamos SendGrid/etc.
         // Pero para simplificar, usaremos el link de verificación de Firebase
         const actionCodeSettings = {
-          url: 'http://localhost:3000/login', // URL a la que vuelve el usuario
+          url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`, // URL a la que vuelve el usuario
         };
         // Para enviar el correo oficial de Firebase, usualmente se hace desde el CLIENTE
         // pero desde ADMIN podemos enviarlo si configuramos un transportador de correos.
@@ -81,6 +85,7 @@ const register = async (req, res, next) => {
       email: user.email,
       phone: user.phone,
       birthdate: user.birthdate,
+      role: user.role,
     };
 
     res.status(201).json({
@@ -115,6 +120,30 @@ const login = async (req, res, next) => {
       return res.status(404).json({ message: 'El correo electrónico no se encuentra :0' });
     }
 
+    if (email === 'admin@bromichat.com' && user.role !== 'admin') {
+      user.role = 'admin';
+      await user.save();
+    }
+
+    // Check suspension
+    if (user.isSuspended) {
+      if (user.suspensionExpires && new Date() > user.suspensionExpires) {
+        // Auto-lift suspension
+        user.isSuspended = false;
+        user.suspensionExpires = undefined;
+        user.suspensionReason = undefined;
+        await user.save();
+      } else {
+        // Still suspended - return specific info
+        return res.status(403).json({
+          message: 'Tu cuenta ha sido suspendida temporalmente.',
+          isSuspended: true,
+          suspensionExpires: user.suspensionExpires,
+          suspensionReason: user.suspensionReason
+        });
+      }
+    }
+
     // Verificar si el correo está verificado en Firebase (si Firebase está habilitado)
     if (admin.apps.length > 0 && user.firebaseUid) {
       try {
@@ -133,9 +162,13 @@ const login = async (req, res, next) => {
       } catch (fbError) {
         console.error('Error verificando estado en Firebase:', fbError);
       }
-    } else if (!user.isVerified) {
-      // Fallback si no hay Firebase
-      return res.status(401).json({ message: 'Por favor verifica tu correo electrónico para iniciar sesión.' });
+    } else {
+      const setting = await AppSetting.findOne({ key: 'strictEmailVerification' });
+      const isStrict = setting ? setting.value : true;
+
+      if (isStrict && !user.isVerified) {
+        return res.status(401).json({ message: 'Por favor verifica tu correo electrónico para iniciar sesión.' });
+      }
     }
 
     const passwordMatch = await user.comparePassword(password);
@@ -159,11 +192,10 @@ const login = async (req, res, next) => {
       storySettings: user.storySettings,
       sosSettings: user.sosSettings,
       savedPosts: user.savedPosts,
+      role: user.role,
     };
 
-    //console.log('Su token: ' + token);
-    //console.log('Usuario logueado:', userData);
-
+    console.log(`[DEBUG] Login exitoso para: ${email}, Rol: ${user.role}`);
     res.json({ token, user: userData });
 
   } catch (error) {
@@ -179,6 +211,15 @@ const getMe = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
+
+    // Auto-lift suspension if expired
+    if (user.isSuspended && user.suspensionExpires && new Date() > user.suspensionExpires) {
+      user.isSuspended = false;
+      user.suspensionExpires = undefined;
+      user.suspensionReason = undefined;
+      await user.save();
+    }
+
     res.status(200).json(user);
   } catch (error) {
     res.status(500).json({ message: 'Error al obtener los datos del usuario' });
@@ -234,9 +275,10 @@ const forgotPassword = async (req, res) => {
 
     if (admin.apps.length > 0 && user.firebaseUid) {
       try {
-        const resetLink = await admin.auth().generatePasswordResetLink(email, {
-          url: 'http://localhost:3000/login',
-        });
+        const actionCodeSettings = {
+          url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`,
+        };
+        const resetLink = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
         // Aquí podrías enviar este resetLink usando tu mailService
         await sendResetPasswordEmail(email, resetLink);
       } catch (fbError) {
