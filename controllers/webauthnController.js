@@ -7,8 +7,10 @@ const {
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-const rpID = 'localhost'; // Should be your domain in production
-const origin = `http://${rpID}:3000`; // Should be your frontend URL
+// Configuración dinámica para WebAuthn
+const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+const origin = frontendUrl.replace(/\/$/, ""); // Eliminar barra final si existe
+const rpID = new URL(frontendUrl).hostname; // Extraer dominio sin puerto ni protocolo
 
 // --- REGISTRATION ---
 

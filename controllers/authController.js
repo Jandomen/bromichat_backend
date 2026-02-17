@@ -178,7 +178,7 @@ const login = async (req, res, next) => {
     }
 
     const token = jwt.sign({ userId: user._id }, process.env.SECRET_KEY, {
-      expiresIn: '24h',
+      expiresIn: '7d', // Aumentado a 7 días para persistencia en móviles
     });
 
     const userData = {
