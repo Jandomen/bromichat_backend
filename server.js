@@ -43,6 +43,7 @@ app.use(compression());
 // Use trust proxy (required for rate limiting behind proxies like Render/Vercel)
 app.set('trust proxy', 1);
 
+/* 
 // Security Headers
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -52,12 +53,13 @@ app.use(helmet({
 // Rate Limiting: Prevent DDoS and brute force
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // Limit each IP to 200 requests per window
+  max: 1000, // Increased limit
   standardHeaders: true,
   legacyHeaders: false,
   message: "Demasiadas peticiones desde esta IP, por favor intenta de nuevo más tarde."
 });
 app.use(limiter);
+*/
 
 // Session configuration for WebAuthn challenges
 app.use(session({
