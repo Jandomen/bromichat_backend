@@ -2,6 +2,9 @@ require('dotenv').config();
 
 const path = require('path');
 const express = require('express');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const http = require('http');
 const socketIO = require('socket.io');
@@ -33,6 +36,28 @@ require('./config/firebase'); // Inicializar Firebase Admin
 
 const app = express();
 const server = http.createServer(app);
+
+// Enable GZIP compression to speed up the app
+app.use(compression());
+
+// Use trust proxy (required for rate limiting behind proxies like Render/Vercel)
+app.set('trust proxy', 1);
+
+// Security Headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false, // Disabled for development/Firebase images
+}));
+
+// Rate Limiting: Prevent DDoS and brute force
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 200, // Limit each IP to 200 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: "Demasiadas peticiones desde esta IP, por favor intenta de nuevo más tarde."
+});
+app.use(limiter);
 
 // Session configuration for WebAuthn challenges
 app.use(session({
