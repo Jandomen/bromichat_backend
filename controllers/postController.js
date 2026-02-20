@@ -467,8 +467,7 @@ exports.getFriendsPosts = async (req, res) => {
 exports.reactToPost = async (req, res) => {
   try {
     const { postId } = req.params;
-    const { type } = req.body; // 'like', 'love', 'haha', 'wow', 'sad', 'angry', 'surprised', 'shocked', 'thinking', 'risky', 'irrelevant'
-
+    const { type } = req.body;
     const validReactions = ['like', 'love', 'haha', 'wow', 'sad', 'angry', 'surprised', 'shocked', 'thinking', 'risky', 'irrelevant'];
     if (!validReactions.includes(type)) {
       return res.status(400).json({ error: 'Invalid reaction type' });
