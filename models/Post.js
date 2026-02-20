@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const commentSchema = new mongoose.Schema({
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     comment: { type: String, required: true },
-    parentId: { type: mongoose.Schema.Types.ObjectId, default: null }, // Allows infinite nesting
+    parentId: { type: mongoose.Schema.Types.ObjectId, default: null },
     isEdited: { type: Boolean, default: false },
     createdAt: { type: Date, default: Date.now },
 });
@@ -23,7 +23,7 @@ const postSchema = new mongoose.Schema({
     sharedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'Post' },
     group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group' },
     isGroupPost: { type: Boolean, default: false },
-    // Keeping legacy likes/dislikes for safety, synced or deprecated
+    
     likes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     dislikes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
     comments: [commentSchema],

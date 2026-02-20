@@ -11,7 +11,7 @@ const socketIO = require('socket.io');
 const connectDB = require('./config/db');
 const initSettings = require('./utils/initSettings');
 
-// ...
+
 connectDB().then(() => {
   initSettings();
 });

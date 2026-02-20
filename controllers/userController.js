@@ -246,7 +246,7 @@ const getUserDetails = async (req, res) => {
       .populate('followers', '_id username name lastName profilePicture')
       .populate('following', '_id username name lastName profilePicture')
       .populate('blockedUsers', '_id username name lastName profilePicture')
-      .select('username profilePicture coverPhoto friends followers following blockedUsers');
+      .select('username name lastName email phone bio profilePicture coverPhoto friends followers following blockedUsers privacySettings');
 
     if (!user) {
       return res.status(404).json({ message: 'Usuario no encontrado' });
