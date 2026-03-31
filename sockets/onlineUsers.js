@@ -26,4 +26,5 @@ module.exports = {
         return [];
     },
     getAllOnlineUserIds: () => Array.from(onlineUsersMap.keys()),
+    getUserCount: () => onlineUsersMap.size,
 };

@@ -4,12 +4,15 @@ const bcrypt = require('bcrypt');
 
 const initSettings = async () => {
     try {
-        // 1. Ensure default settings exist
         const defaultSettings = [
             { key: 'strictEmailVerification', value: true, description: 'Si es true, obliga a verificar correo para entrar.' },
             { key: 'adminEmail', value: 'admin@bromichat.com', description: 'Correo del administrador principal.' },
             { key: 'adsEnabled', value: false, description: 'Si es true, se muestran anuncios comerciales en el banner premium.' },
-            { key: 'welcomeMessage', value: '¡Bienvenido a BromiChat Enterprise!', description: 'Mensaje de bienvenida para nuevos usuarios.' }
+            { key: 'welcomeMessage', value: '¡Bienvenido a Bromichat Enterprise!', description: 'Mensaje de bienvenida para nuevos usuarios.' },
+            { key: 'primaryColor', value: '#ef4444', description: 'Color primario de la aplicación.' },
+            { key: 'accentColor', value: '#dc2626', description: 'Color de acento de la aplicación.' },
+            { key: 'appLogo', value: '/logo.png', description: 'URL del logo institucional.' },
+            { key: 'appBackground', value: '#050505', description: 'Color de fondo principal.' }
         ];
 
         for (const s of defaultSettings) {
@@ -20,14 +23,13 @@ const initSettings = async () => {
             }
         }
 
-        // 2. Ensure admin user exists
         let adminUser = await User.findOne({ email: 'admin@bromichat.com' });
         if (!adminUser) {
             const hashedPassword = await bcrypt.hash('admin123', 10);
             adminUser = new User({
                 username: 'admin',
                 name: 'Admin',
-                lastName: 'BromiChat',
+                lastName: 'Bromichat',
                 email: 'admin@bromichat.com',
                 password: hashedPassword,
                 phone: '0000000000',

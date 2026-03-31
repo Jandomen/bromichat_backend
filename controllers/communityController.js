@@ -14,7 +14,7 @@ const createGroup = async (req, res) => {
             return res.status(400).json({ message: 'Group name is required' });
         }
 
-        // Ensure creator is always a member and admin
+       
         const memberIds = [userId];
         if (initialMembers) {
             let parsedMembers = [];
@@ -30,7 +30,7 @@ const createGroup = async (req, res) => {
             });
         }
 
-        // Subir imagen si viene
+        
         let finalCoverImage = coverImage || '';
         if (req.file && req.file.buffer) {
             const result = await uploadToCloudinary(req.file.buffer, 'community_covers', 'image');
@@ -49,7 +49,7 @@ const createGroup = async (req, res) => {
 
         await newGroup.save();
 
-        // Notify initial members
+      
         if (Array.isArray(initialMembers)) {
             for (const memberId of initialMembers) {
                 if (memberId.toString() === userId.toString()) continue;
@@ -83,7 +83,7 @@ const addMember = async (req, res) => {
 
         const currentUser = await User.findById(currentUserId);
 
-        // Check if current user is an admin
+        
         if (!group.admins.includes(currentUserId.toString()) && group.creator.toString() !== currentUserId.toString()) {
             return res.status(403).json({ message: 'Only admins can add members' });
         }
@@ -120,7 +120,7 @@ const removeMember = async (req, res) => {
         const group = await Group.findById(groupId);
         if (!group) return res.status(404).json({ message: 'Group not found' });
 
-        // Only admins can remove others, users can remove themselves (leave)
+      
         const isAdmin = group.admins.includes(currentUserId.toString()) || group.creator.toString() === currentUserId.toString();
         const isSelf = currentUserId.toString() === userIdToRemove;
 
@@ -128,10 +128,9 @@ const removeMember = async (req, res) => {
             return res.status(403).json({ message: 'Not authorized to remove this member' });
         }
 
-        // Prevent removing the creator unless handled specifically
+       
         if (userIdToRemove === group.creator.toString() && isSelf) {
-            // Logic for creator leaving (e.g., assign new admin or deny)
-            // For now, let's just allow it but maybe warn or assigning a new creator
+           
         }
 
         group.members = group.members.filter(id => id.toString() !== userIdToRemove);
@@ -146,7 +145,7 @@ const removeMember = async (req, res) => {
 };
 
 const getAllGroups = async (req, res) => {
-    // Can add filters/search later
+    
     try {
         const groups = await Group.find().populate('members', 'username profilePicture');
         res.json(groups);
@@ -206,8 +205,7 @@ const leaveGroup = async (req, res) => {
         group.members = group.members.filter(id => id.toString() !== userId.toString());
         group.admins = group.admins.filter(id => id.toString() !== userId.toString());
 
-        // Optional: If creator leaves, assign new creator or handle logic
-
+   
         await group.save();
 
         res.json({ message: 'Left group successfully' });
@@ -282,7 +280,7 @@ const createGroupPost = async (req, res) => {
 
         await newPost.save();
 
-        // Populate user info for immediate display
+       
         await newPost.populate('user', 'username profilePicture');
 
         res.status(201).json(newPost);
@@ -301,7 +299,7 @@ const updateGroup = async (req, res) => {
         const group = await Group.findById(groupId);
         if (!group) return res.status(404).json({ message: 'Group not found' });
 
-        // Anyone mentioned in members can update? User said "Cualquier integrante"
+       
         if (!group.members.some(m => m.toString() === userId.toString())) {
             return res.status(403).json({ message: 'Solo miembros pueden editar el grupo' });
         }
@@ -335,12 +333,12 @@ const deleteGroup = async (req, res) => {
         const group = await Group.findById(groupId);
         if (!group) return res.status(404).json({ message: 'Group not found' });
 
-        // Only creator can delete
+       
         if (group.creator.toString() !== userId.toString()) {
             return res.status(403).json({ message: 'Solo el creador puede eliminar el grupo' });
         }
 
-        // Delete associated posts
+       
         await Post.deleteMany({ group: groupId });
 
         await Group.findByIdAndDelete(groupId);

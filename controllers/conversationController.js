@@ -11,13 +11,13 @@ const createConversation = async (req, res) => {
     return res.status(400).json({ message: 'Se requieren al menos dos participantes' });
   }
 
-  // Validate friends/following relation
+  
   if (isGroup) {
     const user = await User.findById(currentUserId).populate('friends following');
     const allowedIds = new Set([
       ...user.friends.map(f => f._id.toString()),
       ...user.following.map(f => f._id.toString()),
-      currentUserId // Self is always allowed
+      currentUserId 
     ]);
 
     const invalidParticipants = uniqueParticipants.filter(id => !allowedIds.has(id));
@@ -71,7 +71,7 @@ const updateConversation = async (req, res) => {
 
     await conversation.save();
 
-    // Notify update
+   
     const io = req.app.get('io');
     io.to(`group:${conversationId}`).emit('groupUpdated', conversation);
 
@@ -101,10 +101,10 @@ const leaveConversation = async (req, res) => {
       return res.status(400).json({ message: 'No eres parte de esta conversación' });
     }
 
-    // If empty, delete? Or keep archive? Let's keep it but maybe logic to delete specific empty groups
+   
     if (conversation.participants.length === 0) {
       await Conversation.findByIdAndDelete(conversationId);
-      // Also delete messages?
+     
       await Message.deleteMany({ conversationId });
       return res.json({ message: 'Grupo eliminado por falta de participantes' });
     }
@@ -125,33 +125,31 @@ const getConversations = async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // 1. Fetch private and chat-only group conversations
+   
     let conversations = await Conversation.find({ participants: userId })
       .populate('participants', 'username profilePicture')
       .populate({ path: 'lastMessage', select: 'content senderId createdAt' })
       .sort({ updatedAt: -1 });
 
-    // 2. Fetch community groups the user belongs to
-    // Note: We'll need the Group model here
+    
     const Group = require('../models/Group');
     const communityGroups = await Group.find({ members: userId })
       .select('name coverImage members')
       .populate('members', 'username profilePicture')
       .lean();
 
-    // Map community groups to conversation format
+   
     const mappedCommunities = communityGroups.map(group => ({
       _id: group._id,
       name: group.name,
       groupImage: group.coverImage,
       participants: group.members,
       isGroup: true,
-      chatType: 'community', // Distinguish from chat groups
-      updatedAt: group.createdAt // Default if no messages
+      chatType: 'community', 
+      updatedAt: group.createdAt
     }));
 
-    // 3. Merge and sort
-    // Filter private conversations that have at least another participant
+   
     conversations = conversations.filter(conv => {
       if (!conv.isGroup) {
         return conv.participants.some(p => p._id.toString() !== userId);
@@ -159,7 +157,7 @@ const getConversations = async (req, res) => {
       return true;
     });
 
-    // Merge both lists
+   
     const merged = [...conversations, ...mappedCommunities].sort((a, b) =>
       new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)
     );
@@ -180,7 +178,7 @@ const getConversationById = async (req, res) => {
   }
 
   try {
-    // 1. Try Chat Conversation
+    
     let conversation = await Conversation.findById(conversationId)
       .populate('participants', 'username profilePicture')
       .populate({ path: 'lastMessage', select: 'content senderId createdAt' });
@@ -192,7 +190,7 @@ const getConversationById = async (req, res) => {
       return res.status(200).json(conversation);
     }
 
-    // 2. Try Community Group
+    
     const Group = require('../models/Group');
     const group = await Group.findById(conversationId)
       .populate('members', 'username profilePicture')
@@ -202,7 +200,7 @@ const getConversationById = async (req, res) => {
       if (!group.members.some(m => (m._id?.toString() || m.toString()) === userId.toString())) {
         return res.status(403).json({ message: 'No eres miembro de este grupo' });
       }
-      // Map to conversation format
+      
       return res.status(200).json({
         _id: group._id,
         name: group.name,
@@ -237,7 +235,7 @@ const deleteConversation = async (req, res) => {
 
     res.status(200).json({ message: 'Conversación eliminada correctamente' });
   } catch (error) {
-    // console.error('Error al eliminar conversación:', error);
+   
     res.status(500).json({ message: 'Error al eliminar conversación' });
   }
 };
@@ -267,7 +265,7 @@ const searchConversations = async (req, res) => {
 
     res.status(200).json(conversations);
   } catch (error) {
-    // console.error('Error al buscar conversaciones:', error);
+   
     res.status(500).json({ message: 'Error al buscar conversaciones' });
   }
 };

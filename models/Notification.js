@@ -7,13 +7,13 @@ const notificationSchema = new mongoose.Schema(
     message: { type: String, required: true },
     type: {
       type: String,
-      enum: ['message', 'friend_request', 'like', 'dislike', 'comment', 'new_follower', 'group_message', 'reply', 'reaction', 'share', 'group_invite'],
+      enum: ['message', 'friend_request', 'like', 'dislike', 'comment', 'new_follower', 'group_message', 'reply', 'reaction', 'share', 'group_invite', 'announcement'],
       required: true,
     },
     isRead: { type: Boolean, default: false },
     link: { type: String, default: '' },
     postId: { type: mongoose.Schema.Types.ObjectId, ref: 'Post', required: false },
-    commentId: { type: String, required: false }, // Store the specific comment/reply ID
+    commentId: { type: String, required: false },
     videoId: { type: mongoose.Schema.Types.ObjectId, ref: 'Video', required: false },
     galleryId: { type: mongoose.Schema.Types.ObjectId, ref: 'Gallery', required: false },
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: 'Conversation', required: false },

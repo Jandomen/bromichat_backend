@@ -1,3 +1,8 @@
+const buffer = require('buffer');
+if (!buffer.SlowBuffer) {
+  buffer.SlowBuffer = buffer.Buffer;
+}
+
 require('dotenv').config();
 
 const path = require('path');
@@ -31,44 +36,30 @@ const communityRoutes = require('./routes/communityRoutes');
 const storyRoutes = require('./routes/storyRoutes');
 const webauthnRoutes = require('./routes/webauthnRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const supportRoutes = require('./routes/supportRoutes');
 const session = require('express-session');
-require('./config/firebase'); // Inicializar Firebase Admin
+const checkBannedIp = require('./middlewares/checkBannedIp');
+require('./config/firebase');
 
 const app = express();
+
+app.use(checkBannedIp);
 const server = http.createServer(app);
 
-// Enable GZIP compression to speed up the app
+
 app.use(compression());
 
-// Use trust proxy (required for rate limiting behind proxies like Render/Vercel)
+
 app.set('trust proxy', 1);
 
-/* 
-// Security Headers
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: false, // Disabled for development/Firebase images
-}));
 
-// Rate Limiting: Prevent DDoS and brute force
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Increased limit
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: "Demasiadas peticiones desde esta IP, por favor intenta de nuevo más tarde."
-});
-app.use(limiter);
-*/
-
-// Session configuration for WebAuthn challenges
 app.use(session({
   secret: process.env.SECRET_KEY || 'biometric-secret',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set to true if using HTTPS
-    maxAge: 30 * 60 * 1000, // 30 minutes
+    secure: false,
+    maxAge: 30 * 60 * 1000,
     sameSite: 'lax',
     httpOnly: true,
   }
@@ -107,7 +98,7 @@ require('./sockets/chat')(io);
 require('./sockets/notification')(io);
 require('./sockets/call')(io);
 
-connectDB();
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -131,9 +122,7 @@ app.use('/communities', communityRoutes);
 app.use('/stories', storyRoutes);
 app.use('/webauthn', webauthnRoutes);
 app.use('/admin', adminRoutes);
-
-const { getPublicSettings } = require('./controllers/settingsController');
-app.get('/settings/public', getPublicSettings);
+app.use('/support', supportRoutes);
 
 const PORT = process.env.PORT;
 server.listen(PORT, () => {

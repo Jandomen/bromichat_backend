@@ -16,7 +16,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   limits: {
-    fileSize: 500 * 1024 * 1024, // 500MB limit for high quality videos
+    fileSize: 500 * 1024 * 1024, 
     files: 10,
   },
   fileFilter,

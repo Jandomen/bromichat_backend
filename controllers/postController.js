@@ -418,6 +418,10 @@ exports.getFriendsPosts = async (req, res) => {
 
     const currentUser = await User.findById(userId).select('blockedUsers friends following');
     const blockedIds = currentUser.blockedUsers.map(id => id.toString());
+    const friendIds = currentUser.friends.map(id => id.toString()).filter(id => !blockedIds.includes(id));
+    
+    // Incluir al propio usuario en la lista de amigos para que pueda ver sus propios posts en el feed
+    const allowedUserIds = [...friendIds, userId.toString()];
 
     const Group = require('../models/Group');
     const userGroups = await Group.find({ members: userId }).select('_id');
@@ -425,10 +429,10 @@ exports.getFriendsPosts = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    // Fetch posts from ANY user (except blocked) OR posts from user's groups
+    // Fetch posts from FRIENDS (and self) OR posts from user's groups
     const posts = await Post.find({
       $or: [
-        { user: { $nin: blockedIds }, isGroupPost: { $ne: true } },
+        { user: { $in: allowedUserIds }, isGroupPost: { $ne: true } },
         { group: { $in: groupIds }, isGroupPost: true }
       ]
     })
@@ -448,7 +452,7 @@ exports.getFriendsPosts = async (req, res) => {
 
     const totalPosts = await Post.countDocuments({
       $or: [
-        { user: { $nin: blockedIds }, isGroupPost: { $ne: true } },
+        { user: { $in: allowedUserIds }, isGroupPost: { $ne: true } },
         { group: { $in: groupIds }, isGroupPost: true }
       ]
     });
