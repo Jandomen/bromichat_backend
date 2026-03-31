@@ -84,7 +84,7 @@ exports.deletePhoto = async (req, res) => {
   }
 };
 
-// Obtener feed de fotos (TikTok style for images - SOLO USUARIOS REALES)
+
 exports.getPhotoFeed = async (req, res) => {
   try {
     const { category } = req.query;

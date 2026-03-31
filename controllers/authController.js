@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const crypto = require('crypto');
 const User = require('../models/User');
 const AppSetting = require('../models/AppSetting');
+const BannedIp = require('../models/BannedIp');
 const { sendVerificationEmail, sendResetPasswordEmail } = require('../utils/mailService');
 const admin = require('../config/firebase');
 
@@ -41,10 +42,11 @@ const register = async (req, res, next) => {
       phone,
       birthdate: birthdateObj,
       verificationToken,
-      isVerified: !isStrict // Si no es strict, lo marcamos como verificado
+      isVerified: !isStrict,
+      registrationIp: req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress
     });
 
-    // Intentar crear usuario en Firebase
+   
     if (admin.apps.length > 0) {
       try {
         const firebaseUser = await admin.auth().createUser({
@@ -54,15 +56,11 @@ const register = async (req, res, next) => {
         });
         user.firebaseUid = firebaseUser.uid;
 
-        // Enviar email de verificación de Firebase
-        // Nota: Admin SDK no envía el correo directamente, genera el link o usamos SendGrid/etc.
-        // Pero para simplificar, usaremos el link de verificación de Firebase
+       
         const actionCodeSettings = {
-          url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`, // URL a la que vuelve el usuario
+          url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`, 
         };
-        // Para enviar el correo oficial de Firebase, usualmente se hace desde el CLIENTE
-        // pero desde ADMIN podemos enviarlo si configuramos un transportador de correos.
-        // Aquí activaremos la lógica de verificación posterior.
+       
       } catch (fbError) {
         console.error('Error al crear usuario en Firebase:', fbError);
       }
@@ -70,7 +68,7 @@ const register = async (req, res, next) => {
 
     await user.save();
 
-    // Enviar email de verificación
+   
     try {
       await sendVerificationEmail(email, verificationToken);
     } catch (mailError) {
@@ -106,12 +104,12 @@ const login = async (req, res, next) => {
 
   try {
     if (!email) {
-      //console.log('Debes ingresar el correo electrónico :0');
+     
       return res.status(400).json({ error: 'Debes ingresar el correo electrónico :0' });
     }
 
     if (!password) {
-      //console.log('Debes ingresar la contraseña :0');
+     
       return res.status(400).json({ error: 'Debes ingresar la contraseña :0' });
     }
 
@@ -125,16 +123,24 @@ const login = async (req, res, next) => {
       await user.save();
     }
 
-    // Check suspension
+   
+    // Check for permanent ban
+    if (user.isPermanentlyBanned) {
+      return res.status(403).json({
+        message: 'Tu cuenta ha sido expulsada permanentemente de la red por incumplimiento crítico de las normas.',
+        isPermanentlyBanned: true
+      });
+    }
+
     if (user.isSuspended) {
       if (user.suspensionExpires && new Date() > user.suspensionExpires) {
-        // Auto-lift suspension
+       
         user.isSuspended = false;
         user.suspensionExpires = undefined;
         user.suspensionReason = undefined;
         await user.save();
       } else {
-        // Still suspended - return specific info
+       
         return res.status(403).json({
           message: 'Tu cuenta ha sido suspendida temporalmente.',
           isSuspended: true,
@@ -144,7 +150,7 @@ const login = async (req, res, next) => {
       }
     }
 
-    // Verificar si el correo está verificado en Firebase (si Firebase está habilitado)
+   
     if (admin.apps.length > 0 && user.firebaseUid) {
       try {
         const fbUser = await admin.auth().getUser(user.firebaseUid);
@@ -154,7 +160,7 @@ const login = async (req, res, next) => {
             notVerified: true
           });
         }
-        // Sincronizar estado en nuestra DB
+       
         if (!user.isVerified) {
           user.isVerified = true;
           await user.save();
@@ -177,8 +183,12 @@ const login = async (req, res, next) => {
       return res.status(401).json({ message: 'Contraseña incorrecta :(' });
     }
 
+    // Update last IP
+    user.lastIp = req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    await user.save();
+
     const token = jwt.sign({ userId: user._id }, process.env.SECRET_KEY, {
-      expiresIn: '7d', // Aumentado a 7 días para persistencia en móviles
+      expiresIn: '7d', 
     });
 
     const userData = {
@@ -199,7 +209,7 @@ const login = async (req, res, next) => {
     res.json({ token, user: userData });
 
   } catch (error) {
-    //console.log('Error al iniciar sesión :0');
+   
     next(error);
   }
 };
@@ -212,7 +222,7 @@ const getMe = async (req, res) => {
       return res.status(404).json({ message: 'Usuario no encontrado' });
     }
 
-    // Auto-lift suspension if expired
+   
     if (user.isSuspended && user.suspensionExpires && new Date() > user.suspensionExpires) {
       user.isSuspended = false;
       user.suspensionExpires = undefined;
@@ -240,7 +250,7 @@ const verifyEmail = async (req, res) => {
     user.isVerified = true;
     user.verificationToken = undefined;
 
-    // Sincronizar con Firebase si existe el UID
+    
     if (admin.apps.length > 0 && user.firebaseUid) {
       try {
         await admin.auth().updateUser(user.firebaseUid, {
@@ -270,7 +280,7 @@ const forgotPassword = async (req, res) => {
 
     const resetToken = crypto.randomBytes(32).toString('hex');
     user.resetPasswordToken = resetToken;
-    user.resetPasswordExpires = Date.now() + 3600000; // 1 hora
+    user.resetPasswordExpires = Date.now() + 3600000; 
     await user.save();
 
     if (admin.apps.length > 0 && user.firebaseUid) {
@@ -279,7 +289,7 @@ const forgotPassword = async (req, res) => {
           url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/login`,
         };
         const resetLink = await admin.auth().generatePasswordResetLink(email, actionCodeSettings);
-        // Aquí podrías enviar este resetLink usando tu mailService
+       
         await sendResetPasswordEmail(email, resetLink);
       } catch (fbError) {
         console.error('Error generando link en Firebase:', fbError);

@@ -78,6 +78,9 @@ const UserSchema = new mongoose.Schema(
     isSuspended: { type: Boolean, default: false },
     suspensionExpires: { type: Date },
     suspensionReason: { type: String },
+    isPermanentlyBanned: { type: Boolean, default: false },
+    registrationIp: { type: String },
+    lastIp: { type: String },
   },
   { timestamps: true }
 );

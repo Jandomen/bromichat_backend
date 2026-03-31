@@ -69,7 +69,7 @@ const messageSchema = new mongoose.Schema({
   },
   callDetails: {
     status: { type: String, enum: ['missed', 'rejected', 'completed', 'ongoing'] },
-    duration: { type: Number }, // in seconds
+    duration: { type: Number }, 
     startTime: { type: Date },
     endTime: { type: Date },
   },

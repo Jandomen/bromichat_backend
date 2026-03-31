@@ -59,7 +59,7 @@ const createNotification = async ({ recipientId, senderId, message, type, link, 
       const user = await User.findById(rId).select('fcmToken');
       if (user && user.fcmToken) {
         await sendPushNotification(user.fcmToken, {
-          title: populatedNotification?.sender?.username || 'BromiChat',
+          title: populatedNotification?.sender?.username || 'Bromichat',
           body: message,
           data: {
             type,
@@ -134,7 +134,7 @@ const createMessageNotification = async ({ conversation, recipientIds, sender, i
           const user = await User.findById(recipientId).select('fcmToken');
           if (user && user.fcmToken) {
             await sendPushNotification(user.fcmToken, {
-              title: sender.username || 'BromiChat',
+              title: sender.username || 'Bromichat',
               body: `${sender.username} te envió un mensaje${conversation.isGroup ? ` en el grupo ${conversation.name}` : ''}`,
               data: {
                 type: conversation.isGroup ? 'group_message' : 'message',

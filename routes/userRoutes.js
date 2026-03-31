@@ -48,7 +48,7 @@ router.post('/save/:postId', authenticate, toggleSavePost);
 router.get('/saved', authenticate, getSavedPosts);
 router.put('/fcm-token', authenticate, updateFcmToken);
 
-// Community/Admin related actions on users
+
 router.post('/report/:userId', authenticate, adminController.reportUser);
 
 module.exports = router;
